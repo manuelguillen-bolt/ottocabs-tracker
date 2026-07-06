@@ -1,0 +1,28 @@
+name: Actualizar dashboard flotas
+on:
+  schedule:
+    - cron: '30 5 * * *'   # cada día ~7:30 Madrid (5:30 UTC)
+  workflow_dispatch:        # botón manual "Run workflow"
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Construir dashboard con datos frescos
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+          DATABRICKS_WAREHOUSE_ID: ${{ secrets.DATABRICKS_WAREHOUSE_ID }}
+          SHEET_CSV_URL: ${{ secrets.SHEET_CSV_URL }}
+        run: node build.js
+      - name: Publicar si hay cambios
+        run: |
+          git config user.name "dashboard-bot"
+          git config user.email "actions@github.com"
+          git add docs/index.html
+          git diff --cached --quiet || (git commit -m "Datos al $(date -u +%F)" && git push)
