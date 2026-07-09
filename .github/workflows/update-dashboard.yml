@@ -1,7 +1,7 @@
 name: Actualizar dashboard flotas
 on:
   schedule:
-    - cron: '30 5 * * *'   # cada día ~7:30 Madrid (5:30 UTC)
+    - cron: '0 6 * * *'    # cada día a las 8:00 Madrid en verano (6:00 UTC)
   workflow_dispatch:        # botón manual "Run workflow"
 permissions:
   contents: write
