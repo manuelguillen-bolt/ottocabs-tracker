@@ -61,6 +61,8 @@ th:hover{color:var(--dark)}
 .hleg i{width:14px;height:10px;border-radius:2px;display:inline-block;margin-left:6px}
 .lvlbar{display:flex;height:6px;border-radius:3px;overflow:hidden;margin:6px 0 5px;min-width:180px}
 .lvlbar i{display:block}
+.btn-csv{background:var(--green);color:#fff;border:none;border-radius:6px;padding:6px 14px;font-family:inherit;font-size:11.5px;font-weight:700;cursor:pointer;transition:background .15s}
+.btn-csv:hover{background:#23854f}
 td{padding:9px 12px;border-bottom:1px solid #eef1ec;white-space:nowrap;color:#1a241e}
 tbody td:first-child{font-weight:600;color:var(--dark)}
 tbody tr:nth-child(even) td{background:#fafbfa}
@@ -143,7 +145,7 @@ th.r{text-align:right}
       <div class="filters">
         <label>Nivel</label>
         <select id="fLvl"><option value="all">Todos</option><option value="2.5">N2.5</option><option value="2">N2</option><option value="1.5">N1.5</option><option value="1">N1</option><option value="none">Sin nivel</option><option value="branding">Branding</option></select>
-        <input id="fQ" placeholder="Matrícula, empresa o car ID…" style="width:220px">
+        <input id="fQ" placeholder="Matrícula, empresa o car ID…" style="width:220px"><button class="btn-csv" id="expCars" style="margin-left:auto" title="Descargar la tabla filtrada en CSV">⬇ Descargar CSV</button>
       </div>
       <table id="tCars"><thead></thead><tbody><tr><td class="loading" colspan="11">Cargando desde Databricks…</td></tr></tbody></table>
     </div>
@@ -152,7 +154,7 @@ th.r{text-align:right}
     </div>
     <div class="panel" id="p-drv">
       <div class="riskcards" id="drvRisk"></div>
-      <div class="filters"><label>Flota</label><select id="fDrvFlota"><option value="">Todas</option></select><input id="fDrvQ" placeholder="Nombre o driver ID…" style="width:220px"><span class="hleg"><i style="background:#F5DBD8"></i>Crítico<i style="background:#FAEBD4"></i>Bajo<i style="background:#F6F2DC"></i>Medio<i style="background:#DEEFE3"></i>Bueno<i style="background:#BCE0CB"></i>Excelente<span style="margin-left:8px">· EPH y Tasa Fin. con umbrales fijos del acuerdo (15 € / 80%) · % Aeropuerto: más = peor</span></span></div>
+      <div class="filters"><label>Flota</label><select id="fDrvFlota"><option value="">Todas</option></select><input id="fDrvQ" placeholder="Nombre o driver ID…" style="width:220px"><button class="btn-csv" id="expDrv" style="margin-left:auto" title="Descargar la tabla filtrada en CSV">⬇ Descargar CSV</button><span class="hleg"><i style="background:#F5DBD8"></i>Crítico<i style="background:#FAEBD4"></i>Bajo<i style="background:#F6F2DC"></i>Medio<i style="background:#DEEFE3"></i>Bueno<i style="background:#BCE0CB"></i>Excelente<span style="margin-left:8px">· EPH y Tasa Fin. con umbrales fijos del acuerdo (15 € / 80%) · % Aeropuerto: más = peor</span></span></div>
       <table id="tDrv"><thead></thead><tbody><tr><td class="loading" colspan="10">Cargando…</td></tr></tbody></table>
     </div>
     <div class="panel" id="p-canc">
@@ -187,8 +189,8 @@ th.r{text-align:right}
           <li><b>Utilización</b>: has_order ÷ (has_order + waiting_orders) — % de horas online con viaje. Nunca puede superar 100%.</li>
           <li><b>% M30</b>: OH con region_id 2185 (Madrid M-30) ÷ OH totales. <b>% Aeropuerto</b>: OH con region_id 2188 (Madrid Aeropuerto) ÷ OH totales. Misma fuente de regiones que el Looker (admin_system_region).</li>
           <li><b>EPH Neto</b>: facturación neta ÷ OH. <b>RPH</b>: viajes finalizados ÷ OH.</li>
-          <li><b>Tasa de finalización</b> (definición del contrato, vigente desde julio 2026): (aceptados − cancelados por el conductor tras aceptar) ÷ (aceptados + ofrecidos sin responder + rechazados antes de aceptar). Penalizan no responder, rechazar y cancelar tras aceptar; los viajes que mueren por el pasajero no entran en la base, por lo que la tasa nunca supera el 100%.</li>
-          <li><b>Tasa de aceptación</b> (columna conductores): aceptados ÷ (aceptados + ofrecidos sin responder + rechazados antes de aceptar).</li>
+          <li><b>Tasa de finalización</b> (definición del contrato, vigente desde julio 2026, sobre viajes dentro del radio): (aceptados en radio − cancelados por el conductor tras aceptar) ÷ viajes ofrecidos dentro del radio (non-optional). Los viajes fuera del radio y las cancelaciones del pasajero no cuentan. Hasta junio 2026 se mantiene la fórmula con la que se evaluaron esos meses.</li>
+          <li><b>Tasa de aceptación</b> (sobre viajes dentro del radio): aceptados en radio ÷ ofrecidos dentro del radio. Fuente: driver_reporting_*_acceptance_rate_day.</li>
           <li><b>Nivel por coche</b>: nivel más alto donde cumple OH, OH pico, tasa fin. ≥80% y EPH ≥15€. Los coches en campañas CarBranding quedan excluidos de niveles.</li>
           <li><b>Compensación</b>: máx(0, garantizado del nivel − ganancias netas del coche). Se paga a la flota (Company ID).</li>
           <li id="metObjetivo"><b>Objetivo de flota</b>: OH totales del mes (incluidos coches branding) frente al objetivo de 30.000 OH.</li>
@@ -363,11 +365,15 @@ function qCars(s,e){return `WITH act AS (
 pd AS (
  SELECT driver_car_id, ROUND(SUM(CAST(gmv_eur AS DOUBLE))*0.75,2) earn, SUM(finished_rides) rides,
    ROUND(SUM(finished_rides)*100.0/NULLIF(SUM(accepted_orders_tries)-SUM(client_cancelled_after_accepted_tries)-SUM(client_cancelled_after_arrived_tries)-SUM(client_cancelled_after_pickup_tries)-SUM(client_noshows_tries)-SUM(payment_booking_fails_tries),0),1) fin_leg,
-   ROUND((SUM(accepted_orders_tries)-SUM(driver_rejection_after_acceptance_tries))*100.0/NULLIF(SUM(accepted_orders_tries)+SUM(driver_nonresponses_tries)+SUM(driver_rejection_before_acceptance_tries),0),1) fin_con,
-   ROUND(SUM(accepted_orders_tries)*100.0/NULLIF(SUM(accepted_orders_tries)+SUM(driver_nonresponses_tries)+SUM(driver_rejection_before_acceptance_tries),0),1) acc
+   SUM(driver_rejection_after_acceptance_tries) ra_cnt
  FROM ng_public_spark.etl_partner_data
  WHERE company_id IN (${OTTO}) AND created_date_local BETWEEN '${s}' AND '${e}'
  GROUP BY driver_car_id),
+ar AS (
+ SELECT vehicle_id, SUM(required_orders_count) req, SUM(accepted_required_orders_count) acc_req
+ FROM ng_public_spark.driver_reporting_vehicle_acceptance_rate_day
+ WHERE company_id IN (${OTTO}) AND date BETWEEN '${s}' AND '${e}'
+ GROUP BY vehicle_id),
 brand AS (
  SELECT DISTINCT pe.target_id car_id
  FROM ng_public_spark.conditional_campaigns_period_enrollment pe
@@ -376,12 +382,16 @@ brand AS (
    AND DATE(CONVERT_TIMEZONE('Europe/Madrid',camp.start)) BETWEEN '${s}' AND '${e}')
 SELECT car.id car_id, car.company_id cid, car.normalized_reg_number reg,
  REPLACE(co.name,'Madrid Fleet ','') company,
- COALESCE(a.oh,0) oh, COALESCE(a.poh,0) poh, p.fin_leg, p.fin_con, p.acc, p.earn, p.rides,
+ COALESCE(a.oh,0) oh, COALESCE(a.poh,0) poh, p.fin_leg,
+ ROUND(GREATEST(0,r.acc_req-p.ra_cnt)*100.0/NULLIF(r.req,0),1) fin_con,
+ ROUND(r.acc_req*100.0/NULLIF(r.req,0),1) acc,
+ p.earn, p.rides,
  CASE WHEN b.car_id IS NOT NULL THEN 1 ELSE 0 END branding
 FROM pd p
 JOIN ng_public_spark.fleet_car car ON car.id=p.driver_car_id
 JOIN ng_public_spark.fleet_company co ON co.id=car.company_id
 LEFT JOIN act a ON a.car_id=p.driver_car_id
+LEFT JOIN ar r ON r.vehicle_id=p.driver_car_id
 LEFT JOIN brand b ON b.car_id=p.driver_car_id
 WHERE COALESCE(a.oh,0)>=1
 ORDER BY oh DESC LIMIT 400`;}
@@ -397,17 +407,25 @@ e AS (
  SELECT driver_id, MAX(company_id) cid, ROUND(SUM(CAST(gmv_eur AS DOUBLE))*0.75,2) earn,
    SUM(accepted_orders_tries) n_acc, SUM(driver_nonresponses_tries) n_nr, SUM(driver_rejection_before_acceptance_tries) n_rj, SUM(driver_rejection_after_acceptance_tries) n_ca, SUM(finished_rides) n_fin,
    ROUND(SUM(finished_rides)*100.0/NULLIF(SUM(accepted_orders_tries)-SUM(client_cancelled_after_accepted_tries)-SUM(client_cancelled_after_arrived_tries)-SUM(client_cancelled_after_pickup_tries)-SUM(client_noshows_tries)-SUM(payment_booking_fails_tries),0),1) fin_leg,
-   ROUND((SUM(accepted_orders_tries)-SUM(driver_rejection_after_acceptance_tries))*100.0/NULLIF(SUM(accepted_orders_tries)+SUM(driver_nonresponses_tries)+SUM(driver_rejection_before_acceptance_tries),0),1) fin_con,
-   ROUND(SUM(accepted_orders_tries)*100.0/NULLIF(SUM(accepted_orders_tries)+SUM(driver_nonresponses_tries)+SUM(driver_rejection_before_acceptance_tries),0),1) acc
+   SUM(driver_rejection_after_acceptance_tries) ra_cnt
  FROM ng_public_spark.etl_partner_data
  WHERE company_id IN (${OTTO}) AND created_date_local BETWEEN '${s}' AND '${e}'
+ GROUP BY driver_id),
+ar AS (
+ SELECT driver_id, SUM(required_orders_count) req, SUM(accepted_required_orders_count) acc_req
+ FROM ng_public_spark.driver_reporting_driver_acceptance_rate_day
+ WHERE company_id IN (${OTTO}) AND date BETWEEN '${s}' AND '${e}'
  GROUP BY driver_id)
 SELECT e.driver_id, CONCAT(fd.first_name,' ',fd.last_name) name, e.cid,
  a.oh, a.poh, ROUND(a.poh/NULLIF(a.oh,0)*100,1) ppeak,
  ROUND(a.busy/NULLIF(a.oh,0)*100,1) util,
  a.pm30, a.pair,
- ROUND(e.earn/NULLIF(a.oh,0),2) eph, e.earn, e.fin_leg, e.fin_con, e.acc, e.n_acc, e.n_nr, e.n_rj, e.n_ca, e.n_fin
+ ROUND(e.earn/NULLIF(a.oh,0),2) eph, e.earn, e.fin_leg,
+ ROUND(GREATEST(0,r.acc_req-e.ra_cnt)*100.0/NULLIF(r.req,0),1) fin_con,
+ ROUND(r.acc_req*100.0/NULLIF(r.req,0),1) acc,
+ e.n_acc, e.n_nr, e.n_rj, e.n_ca, e.n_fin
 FROM e JOIN a ON a.driver_id=e.driver_id
+LEFT JOIN ar r ON r.driver_id=e.driver_id
 LEFT JOIN ng_public_spark.vw_fleet_driver fd ON fd.target_id=e.driver_id
 WHERE a.oh>=1 ORDER BY a.oh DESC LIMIT 400`;}
 
@@ -618,6 +636,7 @@ function renderCars(){
   const q=($('fQ').value||'').toLowerCase(),lv=$('fLvl').value;
   let rows=state.cars.filter(c=>(lv==='all'||c.lvl===lv)&&(!q||String(c.reg||'').toLowerCase().includes(q.replace(/-/g,''))||String(c.company||'').toLowerCase().includes(q)||String(c.car_id).includes(q)));
   const s=state.sort.tCars||{k:'lvlRank',d:-1};rows=sortBy(rows,s.k,s.d);
+  state.lastCars=rows;
   document.querySelector('#tCars tbody').innerHTML=rows.map(c=>`<tr><td>${fmtReg(c.reg)||'—'}</td><td>${c.car_id}</td><td>${c.company||c.cid}</td><td class="r">${fmt(c.oh,2)}</td><td class="r">${fmt(c.poh,2)}</td><td class="r">${c.fin!=null?fmt(c.fin,2)+'%':'—'}</td><td class="r">${fmt(c.eph,2)}</td><td class="r">${eur(c.earn,2)}</td><td>${lvlChip(c.lvl)}</td><td class="r">${c.gar?eur(c.gar,2):'—'}</td><td class="r">${c.comp>0&&c.gar?'<b style="color:var(--green)">'+eur(c.comp,2)+'</b>':'—'}</td></tr>`).join('')||'<tr><td colspan="11" class="loading">Sin datos</td></tr>';
 }
 
@@ -705,6 +724,7 @@ function renderDrv(){
   const okRisk=d=>R===''?true:R==='eph'?isE(d):R==='fr'?isF(d):R==='both'?isB(d):(isE(d)||isF(d)||isB(d));
   let rows=base.filter(d=>okRisk(d)&&(!q||String(d.name||'').toLowerCase().includes(q)||String(d.flota||'').toLowerCase().includes(q)||String(d.id).includes(q)));
   const s=state.sort.tDrv||{k:'oh',d:-1};rows=sortBy(rows,s.k,s.d);
+  state.lastDrv=rows;
   const hm=heatMaps(rows,DRV_COLS);
   document.querySelector('#tDrv tbody').innerHTML=rows.map(d=>`<tr><td>${d.id}</td><td>${d.name}</td><td>${d.flota}</td><td class="r" style="${hm.oh(d.oh)}">${fmt(d.oh,2)}</td><td class="r" style="${hm.poh(d.poh)}">${fmt(d.poh,2)}</td><td class="r" style="${hm.ppeak(d.ppeak)}">${d.ppeak!=null?fmt(d.ppeak,2)+'%':'—'}</td><td class="r" style="${hm.util(d.util)}">${d.util!=null?fmt(d.util,2)+'%':'—'}</td><td class="r" style="${hm.pm30(d.pm30)}">${d.pm30!=null?fmt(d.pm30,2)+'%':'—'}</td><td class="r" style="${hm.pair(d.pair)}">${d.pair!=null?fmt(d.pair,2)+'%':'—'}</td><td class="r" style="${hm.eph(d.eph)}">${fmt(d.eph,2)}</td><td class="r" style="${hm.earn(d.earn)}">${eur(d.earn,2)}</td><td class="r" style="${hm.acc(d.acc)}">${d.acc!=null?fmt(d.acc,2)+'%':'—'}</td><td class="r" style="${hm.fin(d.fin)}">${d.fin!=null?fmt(d.fin,2)+'%':'—'}</td></tr>`).join('')||'<tr><td colspan="13" class="loading">Sin datos</td></tr>';
 }
@@ -731,6 +751,21 @@ document.querySelectorAll('.tabs .tab').forEach(t=>t.onclick=()=>{
   t.classList.add('on');$('p-'+t.dataset.p).classList.add('on');
 });
 $('fQ').oninput=renderCars;$('fLvl').onchange=renderCars;$('fDrvQ').oninput=renderDrv;$('fDrvFlota').onchange=renderDrv;$('fCancQ').oninput=renderCanc;
+
+// Exportación CSV de las tablas (respeta filtros y orden actuales)
+function dlCSV(name,heads,rows){
+  const esc=v=>{if(v==null)return'';const t=''+v;return /[",\n]/.test(t)?'"'+t.replace(/"/g,'""')+'"':t;};
+  const csv='\ufeff'+heads.join(',')+'\n'+rows.map(r=>r.map(esc).join(',')).join('\n');
+  const b=new Blob([csv],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;
+  document.body.appendChild(a);a.click();a.remove();
+}
+if($('expCars'))$('expCars').onclick=()=>dlCSV('ottocabs-coches-'+state.month+'.csv',
+  ['Matricula','Car ID','Empresa','OH','OH Pico','Tasa Fin %','EPH','Ganancias Netas EUR','Nivel','Garantizado EUR','Compensacion EUR'],
+  (state.lastCars||[]).map(c=>[fmtReg(c.reg),c.car_id,c.company,c.oh,c.poh,c.fin,c.eph!=null?c.eph.toFixed(2):'',c.earn,c.lvl,c.gar,c.comp?c.comp.toFixed(2):0]));
+if($('expDrv'))$('expDrv').onclick=()=>dlCSV('ottocabs-conductores-'+state.month+'.csv',
+  ['Driver ID','Nombre','Flota','OH','OH Pico','Pct Pico','Pct Util','Pct M30','Pct Aeropuerto','EPH','Facturacion EUR','Tasa Acept %','Tasa Fin %'],
+  (state.lastDrv||[]).map(d=>[d.id,d.name,d.flota,d.oh,d.poh,d.ppeak,d.util,d.pm30,d.pair,d.eph,d.earn,d.acc,d.fin]));
 
 // Toggle vista diaria/semanal
 function setView(v){
