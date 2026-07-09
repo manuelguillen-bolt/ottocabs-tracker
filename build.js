@@ -41,7 +41,7 @@ function monthRange(m){
   const start=`${m}-01`;
   let end=`${m}-${String(last).padStart(2,'0')}`;if(end>yesterday)end=yesterday;
   const dow=s=>(D(s).getUTCDay()+6)%7;
-  const fs_=addD(start,-dow(start));
+  const fs_=addD(start,-dow(start)-7); // semana previa extra para WoW
   let fe=addD(`${m}-${String(last).padStart(2,'0')}`,6-dow(`${m}-${String(last).padStart(2,'0')}`));
   if(fe>yesterday)fe=yesterday;
   return{start,end,fetchStart:fs_,fetchEnd:fe};

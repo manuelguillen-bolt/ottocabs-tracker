@@ -39,6 +39,28 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Ari
 table{width:100%;border-collapse:separate;border-spacing:0;font-size:12.5px;font-variant-numeric:tabular-nums}
 th{position:sticky;top:0;z-index:2;background:#fbfcfb;color:var(--muted);font-weight:700;text-align:left;padding:11px 12px;font-size:10px;text-transform:uppercase;letter-spacing:.6px;border-bottom:2px solid var(--dark);white-space:nowrap;cursor:pointer;user-select:none;transition:color .15s}
 th:hover{color:var(--dark)}
+#tDrv th.r{text-align:center}
+#tDrv th:nth-child(-n+3),#tDrv td:nth-child(-n+3),#tCanc th:nth-child(-n+3),#tCanc td:nth-child(-n+3){position:sticky;z-index:2}
+#tDrv th:nth-child(-n+3),#tCanc th:nth-child(-n+3){z-index:4}
+#tDrv td:nth-child(-n+3),#tCanc td:nth-child(-n+3){background:#fff}
+#tDrv tbody tr:nth-child(even) td:nth-child(-n+3),#tCanc tbody tr:nth-child(even) td:nth-child(-n+3){background:#fafbfa}
+#tDrv tbody tr:hover td:nth-child(-n+3),#tCanc tbody tr:hover td:nth-child(-n+3){background:#edf5f0}
+#tDrv th:nth-child(1),#tDrv td:nth-child(1),#tCanc th:nth-child(1),#tCanc td:nth-child(1){left:0;min-width:82px}
+#tDrv th:nth-child(2),#tDrv td:nth-child(2),#tCanc th:nth-child(2),#tCanc td:nth-child(2){left:82px;min-width:172px;max-width:172px;overflow:hidden;text-overflow:ellipsis}
+#tDrv th:nth-child(3),#tDrv td:nth-child(3),#tCanc th:nth-child(3),#tCanc td:nth-child(3){left:254px;min-width:150px;max-width:150px;overflow:hidden;text-overflow:ellipsis;border-right:2px solid var(--border)}
+.riskcards{display:flex;gap:10px;padding:12px 14px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.rcard{border:1px solid var(--border);border-left:4px solid var(--rc,#ccc);border-radius:8px;padding:8px 16px;cursor:pointer;user-select:none;background:#fff;transition:all .15s;min-width:150px}
+.rcard:hover{border-color:var(--dark)}
+.rcard.on{background:var(--dark);color:#fff;border-left-color:var(--rc)}
+.rcard .rn{font-size:19px;font-weight:800}
+.rcard .rn small{font-size:10px;font-weight:600;color:#4a564f}
+.rcard.on .rn small{color:#cfe0d6}
+.rcard .rl{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin-top:2px}
+.rcard.on .rl{color:#cfe0d6}
+.hleg{display:flex;align-items:center;gap:5px;font-size:10.5px;color:var(--muted);flex-wrap:wrap}
+.hleg i{width:14px;height:10px;border-radius:2px;display:inline-block;margin-left:6px}
+.lvlbar{display:flex;height:6px;border-radius:3px;overflow:hidden;margin:6px 0 5px;min-width:180px}
+.lvlbar i{display:block}
 td{padding:9px 12px;border-bottom:1px solid #eef1ec;white-space:nowrap;color:#1a241e}
 tbody td:first-child{font-weight:600;color:var(--dark)}
 tbody tr:nth-child(even) td{background:#fafbfa}
@@ -75,7 +97,9 @@ th.r{text-align:right}
   <h1>OttoCabs · Fleet Agreement Tracker</h1>
   <span class="sub">Madrid · Ingresos Garantizados</span>
   <span class="badge" id="liveBadge">DATOS EN VIVO</span>
+  <button class="tab vtog" id="mPrev" title="Mes anterior">‹</button>
   <select id="monthSel"></select>
+  <button class="tab vtog" id="mNext" title="Mes siguiente">›</button>
   <span id="status">Iniciando…</span>
 </div>
 <div class="err" id="errBox"></div>
@@ -127,11 +151,12 @@ th.r{text-align:right}
       <table id="tCos"><thead></thead><tbody><tr><td class="loading" colspan="7">Cargando…</td></tr></tbody></table>
     </div>
     <div class="panel" id="p-drv">
-      <div class="filters"><input id="fDrvQ" placeholder="Nombre o driver ID…" style="width:220px"><span style="font-size:11px;color:var(--muted)">Heatmap en 5 niveles: <b style="color:#8C2B24">rojo = peor</b> → ámbar → <b style="color:#0F4A2C">verde = mejor</b>. Utilización = % de horas online con viaje.</span></div>
+      <div class="riskcards" id="drvRisk"></div>
+      <div class="filters"><label>Flota</label><select id="fDrvFlota"><option value="">Todas</option></select><input id="fDrvQ" placeholder="Nombre o driver ID…" style="width:220px"><span class="hleg"><i style="background:#F5DBD8"></i>Crítico<i style="background:#FAEBD4"></i>Bajo<i style="background:#F6F2DC"></i>Medio<i style="background:#DEEFE3"></i>Bueno<i style="background:#BCE0CB"></i>Excelente<span style="margin-left:8px">· EPH y Tasa Fin. con umbrales fijos del acuerdo (15 € / 80%) · % Aeropuerto: más = peor</span></span></div>
       <table id="tDrv"><thead></thead><tbody><tr><td class="loading" colspan="10">Cargando…</td></tr></tbody></table>
     </div>
     <div class="panel" id="p-canc">
-      <div class="filters"><input id="fCancQ" placeholder="Nombre o driver ID…" style="width:220px"><span style="font-size:11px;color:var(--muted)">Viajes ofrecidos que el conductor no convirtió: sin responder, rechazados antes de aceptar y cancelados tras aceptar. Rojo = más viajes perdidos.</span></div>
+      <div class="filters"><input id="fCancQ" placeholder="Nombre o driver ID…" style="width:220px"><span style="font-size:11px;color:var(--muted)"><b>Cómo leerla:</b> cada fila es un conductor. "Ofrecidos" = viajes que le saltaron y dependían de él. Se pierden por 3 vías: <b>Sin responder</b> (ignoró el ping), <b>Rechazados</b> (dijo que no antes de aceptar) y <b>Cancel. tras aceptar</b> (aceptó y luego canceló él). "Total perdidos" las suma. Rojo = pierde más viajes que sus compañeros; las cancelaciones del pasajero no cuentan.</span></div>
       <table id="tCanc"><thead></thead><tbody><tr><td class="loading" colspan="10">Cargando…</td></tr></tbody></table>
     </div>
     <div class="panel" id="p-cond">
@@ -186,7 +211,7 @@ const VIEW=window.DASH_VIEW||'internal';
 const SQL_TOOL='mcp__d1b02b37-660f-4e91-886e-c33af2359965__execute_sql_read_only';
 const POLL_TOOL='mcp__d1b02b37-660f-4e91-886e-c33af2359965__poll_sql_result';
 // Lista de respaldo (51450 excluida: ya no es de Otto según el sheet de Madrid grouping)
-const OTTO_FALLBACK='48987,48986,45968,49158,49157,49163,49153,49367,66665,71501,77550,77720,78912,84963,87798,89481,86083,85237,97130,97127,97124,72407,99857,74513,111062,83211,85751,111383,75667,52566,118186,119170,107552,59942,128456,120802,121566,161012,169628,169630,169631,169633,165923,191796,193873,185454,194472,200848,196035,233137,247358,251069,251063,253457,251079,253461,269737,293930,308705,123634';
+const OTTO_FALLBACK='48987,48986,45968,49158,49157,49163,49153,49367,66665,71501,77550,77720,78912,84963,87798,89481,86083,85237,97130,97127,97124,72407,99857,74513,111062,83211,85751,111383,75667,52566,118186,119170,107552,59942,128456,120802,121566,161012,169628,169630,169631,169633,165923,191796,193873,185454,194472,200848,196035,233137,247358,251069,251063,253457,251079,253461,269737,293930,308705,123634,137345,332255';
 let OTTO=OTTO_FALLBACK;
 let fleetSrc='lista fija de respaldo';
 // Source of truth: Google Sheet "Madrid grouping" (Company | Company ID | FO). Se descarga completo como CSV al abrir.
@@ -233,10 +258,10 @@ async function loadFleetList(){
 }
 // Horas pico del acuerdo. Spark dayofweek: 1=Dom,2=Lun,3=Mar,4=Mié,5=Jue,6=Vie,7=Sáb
 const PEAK_CASE=`CASE
- WHEN dayofweek(period) IN (2,3,4) AND hour(period) IN (7,8,9,17,18,19,20) THEN has_order+waiting_orders
- WHEN dayofweek(period)=5 AND hour(period) IN (7,8,9,17,18,19,20,21,22,23) THEN has_order+waiting_orders
- WHEN dayofweek(period)=6 AND hour(period) IN (0,1,7,8,9,16,17,18,19,20,21,22,23) THEN has_order+waiting_orders
- WHEN dayofweek(period) IN (1,7) THEN has_order+waiting_orders ELSE 0 END`;
+ WHEN dayofweek(CONVERT_TIMEZONE('Europe/Madrid',period)) IN (2,3,4) AND hour(CONVERT_TIMEZONE('Europe/Madrid',period)) IN (7,8,9,17,18,19,20) THEN has_order+waiting_orders
+ WHEN dayofweek(CONVERT_TIMEZONE('Europe/Madrid',period))=5 AND hour(CONVERT_TIMEZONE('Europe/Madrid',period)) IN (7,8,9,17,18,19,20,21,22,23) THEN has_order+waiting_orders
+ WHEN dayofweek(CONVERT_TIMEZONE('Europe/Madrid',period))=6 AND hour(CONVERT_TIMEZONE('Europe/Madrid',period)) IN (0,1,7,8,9,16,17,18,19,20,21,22,23) THEN has_order+waiting_orders
+ WHEN dayofweek(CONVERT_TIMEZONE('Europe/Madrid',period)) IN (1,7) THEN has_order+waiting_orders ELSE 0 END`;
 const PEAK_HOURS={1:[7,8,9,17,18,19,20],2:[7,8,9,17,18,19,20],3:[7,8,9,17,18,19,20],4:[7,8,9,17,18,19,20,21,22,23],5:[0,1,7,8,9,16,17,18,19,20,21,22,23],6:'all',7:'all'};
 const LEVELS=[{lvl:'2.5',oh:440,poh:264,gar:11000},{lvl:'2',oh:400,poh:240,gar:10000},{lvl:'1.5',oh:260,poh:156,gar:6500},{lvl:'1',oh:200,poh:120,gar:5000}];
 // Tasa de finalización: fórmula del contrato (aceptación − cancelación del driver) desde julio 2026; antes, fórmula legada
@@ -291,12 +316,13 @@ function monthDates(m){
   if(end>cap)end=cap;
   // Rango extendido a semanas completas (lunes-domingo) para la vista semanal
   const ds=new Date(y,mm-1,1),de=new Date(y,mm-1,last);
-  ds.setDate(ds.getDate()-((ds.getDay()+6)%7));
+  ds.setDate(ds.getDate()-((ds.getDay()+6)%7)-7); // semana previa extra para WoW del gráfico
   de.setDate(de.getDate()+(6-(de.getDay()+6)%7));
   let fetchEnd=isoDate(de);
   if(fetchEnd>cap)fetchEnd=cap;
   return{start,end,fetchStart:isoDate(ds),fetchEnd};
 }
+function addDays(dstr,n){const[a,b,c]=dstr.split('-').map(Number);const dt=new Date(a,b-1,c);dt.setDate(dt.getDate()+n);return isoDate(dt);}
 function mondayOf(dstr){
   const [y,m,d]=dstr.split('-').map(Number);
   const dt=new Date(y,m-1,d);
@@ -323,15 +349,15 @@ function inProgress(m){
 }
 
 function qKpi(s,e){return `SELECT ROUND(SUM(CAST(gmv_eur AS DOUBLE))*0.75,2) gmv_neto, ROUND(SUM(CAST(gmv_eur AS DOUBLE)),2) gmv_bruto, SUM(finished_rides) rides, COUNT(DISTINCT driver_car_id) cars, COUNT(DISTINCT driver_id) drivers FROM ng_public_spark.etl_partner_data WHERE company_id IN (${OTTO}) AND created_date_local BETWEEN '${s}' AND '${e}'`;}
-function qDailyGmv(s,e){return `SELECT CAST(created_date_local AS STRING) d, ROUND(SUM(CAST(gmv_eur AS DOUBLE))*0.75,2) gmv, SUM(finished_rides) rides FROM ng_public_spark.etl_partner_data WHERE company_id IN (${OTTO}) AND created_date_local BETWEEN '${s}' AND '${e}' GROUP BY 1 ORDER BY 1`;}
+function qDailyGmv(s,e){return `SELECT CAST(created_date_local AS STRING) d, ROUND(SUM(CAST(gmv_eur AS DOUBLE))*0.75,2) gmv, SUM(finished_rides) rides, ROUND(SUM(finished_rides)*100.0/NULLIF(SUM(accepted_orders_tries)-SUM(client_cancelled_after_accepted_tries)-SUM(client_cancelled_after_arrived_tries)-SUM(client_cancelled_after_pickup_tries)-SUM(client_noshows_tries)-SUM(payment_booking_fails_tries),0),1) fin_leg, ROUND((SUM(accepted_orders_tries)-SUM(driver_rejection_after_acceptance_tries))*100.0/NULLIF(SUM(accepted_orders_tries)+SUM(driver_nonresponses_tries)+SUM(driver_rejection_before_acceptance_tries),0),1) fin_con FROM ng_public_spark.etl_partner_data WHERE company_id IN (${OTTO}) AND created_date_local BETWEEN '${s}' AND '${e}' GROUP BY 1 ORDER BY 1`;}
 // Regiones (misma fuente que Looker admin_system_region): M-30 = 2185, Madrid Aeropuerto = 2188
 const REGION_M30=2185, REGION_AIR=2188;
-function qDailyOh(s,e){return `SELECT CAST(period_date AS STRING) d, ROUND(SUM(has_order+waiting_orders)/60.0,1) oh, ROUND(SUM(has_order)/60.0,1) busy, ROUND(SUM(${PEAK_CASE})/60.0,1) poh, ROUND(SUM(CASE WHEN region_id=${REGION_M30} THEN has_order+waiting_orders ELSE 0 END)/60.0,1) m30, ROUND(SUM(CASE WHEN region_id=${REGION_AIR} THEN has_order+waiting_orders ELSE 0 END)/60.0,1) air FROM ng_public_spark.etl_driver_car_online_hour_activity WHERE period_date BETWEEN '${s}' AND '${e}' AND driver_id IN (SELECT DISTINCT target_id FROM ng_public_spark.vw_fleet_driver WHERE company_id IN (${OTTO})) GROUP BY 1 ORDER BY 1`;}
-function qOhTot(s,e){return `SELECT ROUND(SUM(has_order+waiting_orders)/60.0,1) oh_t, ROUND(SUM(has_order)/60.0,1) busy_t, ROUND(SUM(${PEAK_CASE})/60.0,1) poh_t, ROUND(SUM(CASE WHEN region_id=${REGION_M30} THEN has_order+waiting_orders ELSE 0 END)/60.0,1) m30_t, ROUND(SUM(CASE WHEN region_id=${REGION_AIR} THEN has_order+waiting_orders ELSE 0 END)/60.0,1) air_t FROM ng_public_spark.etl_driver_car_online_hour_activity WHERE period_date BETWEEN '${s}' AND '${e}' AND driver_id IN (SELECT DISTINCT target_id FROM ng_public_spark.vw_fleet_driver WHERE company_id IN (${OTTO}))`;}
+function qDailyOh(s,e){return `SELECT CAST(DATE(CONVERT_TIMEZONE('Europe/Madrid',period)) AS STRING) d, ROUND(SUM(has_order+waiting_orders)/60.0,1) oh, ROUND(SUM(has_order)/60.0,1) busy, ROUND(SUM(${PEAK_CASE})/60.0,1) poh, ROUND(SUM(CASE WHEN region_id=${REGION_M30} THEN has_order+waiting_orders ELSE 0 END)/60.0,1) m30, ROUND(SUM(CASE WHEN region_id=${REGION_AIR} THEN has_order+waiting_orders ELSE 0 END)/60.0,1) air FROM ng_public_spark.etl_driver_car_online_hour_activity WHERE period_date BETWEEN date_sub('${s}',1) AND date_add('${e}',1) AND DATE(CONVERT_TIMEZONE('Europe/Madrid',period)) BETWEEN '${s}' AND '${e}' AND driver_id IN (SELECT DISTINCT target_id FROM ng_public_spark.vw_fleet_driver WHERE company_id IN (${OTTO})) GROUP BY 1 ORDER BY 1`;}
+function qOhTot(s,e){return `SELECT ROUND(SUM(has_order+waiting_orders)/60.0,1) oh_t, ROUND(SUM(has_order)/60.0,1) busy_t, ROUND(SUM(${PEAK_CASE})/60.0,1) poh_t, ROUND(SUM(CASE WHEN region_id=${REGION_M30} THEN has_order+waiting_orders ELSE 0 END)/60.0,1) m30_t, ROUND(SUM(CASE WHEN region_id=${REGION_AIR} THEN has_order+waiting_orders ELSE 0 END)/60.0,1) air_t FROM ng_public_spark.etl_driver_car_online_hour_activity WHERE period_date BETWEEN date_sub('${s}',1) AND date_add('${e}',1) AND DATE(CONVERT_TIMEZONE('Europe/Madrid',period)) BETWEEN '${s}' AND '${e}' AND driver_id IN (SELECT DISTINCT target_id FROM ng_public_spark.vw_fleet_driver WHERE company_id IN (${OTTO}))`;}
 function qCars(s,e){return `WITH act AS (
  SELECT car_id, ROUND(SUM(has_order+waiting_orders)/60.0,1) oh, ROUND(SUM(${PEAK_CASE})/60.0,1) poh
  FROM ng_public_spark.etl_driver_car_online_hour_activity
- WHERE period_date BETWEEN '${s}' AND '${e}'
+ WHERE period_date BETWEEN date_sub('${s}',1) AND date_add('${e}',1) AND DATE(CONVERT_TIMEZONE('Europe/Madrid',period)) BETWEEN '${s}' AND '${e}'
    AND driver_id IN (SELECT DISTINCT target_id FROM ng_public_spark.vw_fleet_driver WHERE company_id IN (${OTTO}))
  GROUP BY car_id),
 pd AS (
@@ -364,7 +390,7 @@ function qDrv(s,e){return `WITH a AS (
    ROUND(SUM(CASE WHEN region_id=${REGION_M30} THEN has_order+waiting_orders ELSE 0 END)*100.0/NULLIF(SUM(has_order+waiting_orders),0),1) pm30,
    ROUND(SUM(CASE WHEN region_id=${REGION_AIR} THEN has_order+waiting_orders ELSE 0 END)*100.0/NULLIF(SUM(has_order+waiting_orders),0),1) pair
  FROM ng_public_spark.etl_driver_car_online_hour_activity
- WHERE period_date BETWEEN '${s}' AND '${e}'
+ WHERE period_date BETWEEN date_sub('${s}',1) AND date_add('${e}',1) AND DATE(CONVERT_TIMEZONE('Europe/Madrid',period)) BETWEEN '${s}' AND '${e}'
    AND driver_id IN (SELECT DISTINCT target_id FROM ng_public_spark.vw_fleet_driver WHERE company_id IN (${OTTO}))
  GROUP BY driver_id),
 e AS (
@@ -413,6 +439,7 @@ async function load(month){
     state.kpi=kpi[0]||{};
     state.prev={...(pkpi[0]||{}),...(poh_[0]||{})};
     state.dailyAll=mergeDaily(dg,doh);
+    state.dailyAll.forEach(r=>{r.fin=month>=CONTRACT_FIN_FROM?r.finCon:r.finLeg;});
     state.daily=state.dailyAll.filter(r=>r.d>=start&&r.d<=end);
     const RANKS={'2.5':5,'2':4,'1.5':3,'1':2,'branding':1,'none':0};
     const useCon=month>=CONTRACT_FIN_FROM;
@@ -422,7 +449,8 @@ async function load(month){
       o.lvlRank=RANKS[o.lvl];
       return o;
     });
-    state.drivers=drv.map(d=>({id:d.driver_id,name:d.name||('Driver '+d.driver_id),cid:d.cid,oh:N(d.oh),poh:N(d.poh),ppeak:N(d.ppeak),util:N(d.util),pm30:N(d.pm30),pair:N(d.pair),eph:N(d.eph),earn:N(d.earn),fin:useCon?N(d.fin_con):N(d.fin_leg),acc:N(d.acc),nAcc:N(d.n_acc)||0,nNr:N(d.n_nr)||0,nRj:N(d.n_rj)||0,nCa:N(d.n_ca)||0,nFin:N(d.n_fin)||0,ofr:(N(d.n_acc)||0)+(N(d.n_nr)||0)+(N(d.n_rj)||0),perdidos:(N(d.n_nr)||0)+(N(d.n_rj)||0)+(N(d.n_ca)||0)}));
+    const cmap={};state.cars.forEach(c=>{cmap[c.cid]=c.company||String(c.cid);});
+    state.drivers=drv.map(d=>({id:d.driver_id,name:d.name||('Driver '+d.driver_id),cid:d.cid,flota:cmap[d.cid]||String(d.cid),oh:N(d.oh),poh:N(d.poh),ppeak:N(d.ppeak),util:N(d.util),pm30:N(d.pm30),pair:N(d.pair),eph:N(d.eph),earn:N(d.earn),fin:useCon?N(d.fin_con):N(d.fin_leg),acc:N(d.acc),nAcc:N(d.n_acc)||0,nNr:N(d.n_nr)||0,nRj:N(d.n_rj)||0,nCa:N(d.n_ca)||0,nFin:N(d.n_fin)||0,ofr:(N(d.n_acc)||0)+(N(d.n_nr)||0)+(N(d.n_rj)||0),perdidos:(N(d.n_nr)||0)+(N(d.n_rj)||0)+(N(d.n_ca)||0)}));
     state.ohTot=state.daily.reduce((s,r)=>s+(r.oh||0),0);
     state.pohTot=state.daily.reduce((s,r)=>s+(r.poh||0),0);
     state.busyTot=state.daily.reduce((s,r)=>s+(r.busy||0),0);
@@ -439,7 +467,7 @@ async function load(month){
 }
 function mergeDaily(dg,doh){
   const m={};
-  dg.forEach(r=>{m[r.d]=m[r.d]||{d:r.d};m[r.d].gmv=N(r.gmv);m[r.d].rides=N(r.rides);});
+  dg.forEach(r=>{m[r.d]=m[r.d]||{d:r.d};m[r.d].gmv=N(r.gmv);m[r.d].rides=N(r.rides);m[r.d].finLeg=N(r.fin_leg);m[r.d].finCon=N(r.fin_con);});
   doh.forEach(r=>{m[r.d]=m[r.d]||{d:r.d};m[r.d].oh=N(r.oh);m[r.d].busy=N(r.busy);m[r.d].poh=N(r.poh);m[r.d].m30=N(r.m30);m[r.d].air=N(r.air);});
   return Object.values(m).sort((a,b)=>a.d<b.d?-1:1);
 }
@@ -505,8 +533,17 @@ function render(){
   const bruto=N(k.gmv_bruto)||0;
   {const e=$('kSsp');if(e)e.textContent=bruto?fmt((compTot+bonus)/bruto*100,2)+'%':'—';}
   const dist={};state.cars.forEach(c=>{if(c.lvl!=='none')dist[c.lvl]=(dist[c.lvl]||0)+1;});
-  $('kLevels').innerHTML=['2.5','2','1.5','1','branding'].filter(l=>dist[l]).map(l=>`<span class="pill">${l==='branding'?'Branding':'N'+l}: ${dist[l]}</span>`).join('')||'<span class="pill">Sin niveles aún</span>';
+  {const LC={'2.5':'#0C2C1C','2':'#2A9C64','1.5':'#6FBF92','1':'#A9DFBF','branding':'#5c6b62'};
+   const tot=state.cars.length||1;
+   const segs=['2.5','2','1.5','1','branding'].filter(l=>dist[l]).map(l=>`<i style="width:${(dist[l]/tot*100).toFixed(1)}%;background:${LC[l]}" title="${l==='branding'?'Branding':'N'+l}: ${dist[l]}"></i>`).join('');
+   const bar=segs?`<div class="lvlbar">${segs}<i style="flex:1;background:#eef1ef"></i></div>`:'';
+   $('kLevels').innerHTML=bar+(['2.5','2','1.5','1','branding'].filter(l=>dist[l]).map(l=>`<span class="pill">${l==='branding'?'Branding':'N'+l}: ${dist[l]}</span>`).join('')||'<span class="pill">Sin niveles aún</span>');}
 
+  // Poblar el selector de flota (conductores) con las empresas del mes
+  {const fsel=$('fDrvFlota');
+   if(fsel){const cur=fsel.value;const mm={};state.cars.forEach(c=>{mm[c.cid]=c.company||c.cid;});
+    fsel.innerHTML='<option value="">Todas las flotas</option>'+Object.entries(mm).sort((a,b)=>String(a[1]).localeCompare(String(b[1]))).map(([id,n])=>`<option value="${id}">${n}</option>`).join('');
+    fsel.value=[...fsel.options].some(o=>o.value===cur)?cur:'';}}
   drawChart();renderCars();renderCos();renderDrv();renderCanc();renderPeak();applyView();
   $('footNote').textContent='Flotas: '+fleetSrc+'. Niveles calculados en vivo contra los umbrales del acuerdo (OH, OH pico, tasa fin. ≥80%, EPH ≥15€). Coches branding identificados por campañas CarBranding. Datos a día vencido; el dashboard consulta Databricks al abrirse y se refresca cada hora (9:00–17:00) mientras esté abierto. Vista semanal: semanas completas lun–dom que tocan el mes seleccionado. OH = horas online (con viaje + esperando) de la tabla de actividad; puede diferir ±1% del portal de flotas, que calcula desde sesiones en crudo. '+(prog?'Mes en curso: niveles y compensaciones son provisionales hasta cierre de mes.':'');
 }
@@ -518,7 +555,8 @@ function weeklyData(){
     const o=w[mon]=w[mon]||{d:mon,gmv:0,oh:0,poh:0,busy:0,rides:0};
     o.gmv+=r.gmv||0;o.oh+=r.oh||0;o.poh+=r.poh||0;o.busy+=r.busy||0;o.rides+=r.rides||0;
   });
-  return Object.values(w).sort((a,b)=>a.d<b.d?-1:1);
+  const first=mondayOf(state.month+'-01');
+  return Object.values(w).filter(x=>x.d>=first).sort((a,b)=>a.d<b.d?-1:1);
 }
 const MESES=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
 function drawChart(){
@@ -529,6 +567,11 @@ function drawChart(){
   const labels=weekly
     ?rows.map(r=>'Sem '+parseInt(r.d.slice(8))+' '+MESES[parseInt(r.d.slice(5,7))-1])
     :rows.map(r=>r.d.slice(8)+'/'+r.d.slice(5,7));
+  const byDay={};(state.dailyAll||[]).forEach(r=>{byDay[r.d]=r;});
+  const wAll={};(state.dailyAll||[]).forEach(r=>{const mon=mondayOf(r.d);const o=wAll[mon]=wAll[mon]||{gmv:0,oh:0,rides:0};o.gmv+=r.gmv||0;o.oh+=r.oh||0;o.rides+=r.rides||0;});
+  const prevOf=r=>weekly?wAll[addDays(r.d,-7)]:byDay[addDays(r.d,-7)];
+  const pct=(c,p)=>(p==null||!p||c==null)?null:(c-p)/p*100;
+  const pl=v=>v==null?'—':(v>=0?'+':'')+fmt(v,1)+'%';
   state.chart=new Chart(ctx,{type:'bar',
     data:{labels,
       datasets:[
@@ -536,12 +579,23 @@ function drawChart(){
         {label:'Facturación neta €',data:rows.map(r=>r.gmv),type:'line',borderColor:'#2A9C64',backgroundColor:'#2A9C64',yAxisID:'y',tension:.3,pointRadius:weekly?3:2,order:1}
       ]},
     options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
-      plugins:{legend:{labels:{font:{family:'Inter',size:11},boxWidth:12}}},
+      plugins:{legend:{labels:{font:{family:'Inter',size:11},boxWidth:12}},
+        tooltip:{callbacks:{afterBody:items=>{
+          const r=rows[items[0].dataIndex];if(!r)return[];
+          const p=prevOf(r);const L=[];
+          L.push('Viajes: '+fmt(r.rides)+(p&&p.rides?'   WoW '+pl(pct(r.rides,p.rides)):''));
+          if(!weekly&&r.fin!=null)L.push('Tasa fin.: '+fmt(r.fin,1)+'%'+(p&&p.fin!=null?'   WoW '+((r.fin-p.fin>=0?'+':'')+fmt(r.fin-p.fin,1)+' pp'):''));
+          if(p){L.push('WoW OH: '+pl(pct(r.oh,p.oh)));L.push('WoW Facturación: '+pl(pct(r.gmv,p.gmv)));}
+          else L.push('WoW: sin semana previa disponible');
+          return L;
+        }}}},
       scales:{y:{position:'left',ticks:{font:{size:10}},title:{display:true,text:'€',font:{size:10}}},
               y1:{position:'right',grid:{drawOnChartArea:false},ticks:{font:{size:10}},title:{display:true,text:'OH',font:{size:10}}},
               x:{ticks:{font:{size:9},maxRotation:0,autoSkip:true}}}}});
 }
 
+// Matrícula en formato 1234-ABC
+const fmtReg=r=>r?String(r).replace(/^(\d{4})[\s-]?([A-Za-z]{3})$/,'$1-$2'):r;
 function lvlChip(l){
   if(l==='branding')return'<span class="lvl lvl-brand">Branding</span>';
   if(l==='none')return'<span class="lvl lvl-none">—</span>';
@@ -562,19 +616,19 @@ const CAR_COLS=[{k:'reg',t:'Matrícula'},{k:'car_id',t:'Car ID'},{k:'company',t:
 function renderCars(){
   headRow('tCars',CAR_COLS,state.cars,renderCars);
   const q=($('fQ').value||'').toLowerCase(),lv=$('fLvl').value;
-  let rows=state.cars.filter(c=>(lv==='all'||c.lvl===lv)&&(!q||String(c.reg||'').toLowerCase().includes(q)||String(c.company||'').toLowerCase().includes(q)||String(c.car_id).includes(q)));
+  let rows=state.cars.filter(c=>(lv==='all'||c.lvl===lv)&&(!q||String(c.reg||'').toLowerCase().includes(q.replace(/-/g,''))||String(c.company||'').toLowerCase().includes(q)||String(c.car_id).includes(q)));
   const s=state.sort.tCars||{k:'lvlRank',d:-1};rows=sortBy(rows,s.k,s.d);
-  document.querySelector('#tCars tbody').innerHTML=rows.map(c=>`<tr><td>${c.reg||'—'}</td><td>${c.car_id}</td><td>${c.company||c.cid}</td><td class="r">${fmt(c.oh,2)}</td><td class="r">${fmt(c.poh,2)}</td><td class="r">${c.fin!=null?fmt(c.fin,2)+'%':'—'}</td><td class="r">${fmt(c.eph,2)}</td><td class="r">${eur(c.earn,2)}</td><td>${lvlChip(c.lvl)}</td><td class="r">${c.gar?eur(c.gar,2):'—'}</td><td class="r">${c.comp>0&&c.gar?'<b style="color:var(--green)">'+eur(c.comp,2)+'</b>':'—'}</td></tr>`).join('')||'<tr><td colspan="11" class="loading">Sin datos</td></tr>';
+  document.querySelector('#tCars tbody').innerHTML=rows.map(c=>`<tr><td>${fmtReg(c.reg)||'—'}</td><td>${c.car_id}</td><td>${c.company||c.cid}</td><td class="r">${fmt(c.oh,2)}</td><td class="r">${fmt(c.poh,2)}</td><td class="r">${c.fin!=null?fmt(c.fin,2)+'%':'—'}</td><td class="r">${fmt(c.eph,2)}</td><td class="r">${eur(c.earn,2)}</td><td>${lvlChip(c.lvl)}</td><td class="r">${c.gar?eur(c.gar,2):'—'}</td><td class="r">${c.comp>0&&c.gar?'<b style="color:var(--green)">'+eur(c.comp,2)+'</b>':'—'}</td></tr>`).join('')||'<tr><td colspan="11" class="loading">Sin datos</td></tr>';
 }
 
-const CANC_COLS=[{k:'id',t:'Driver ID'},{k:'name',t:'Nombre'},{k:'cid',t:'Company ID'},{k:'ofr',t:'Ofrecidos',r:1},{k:'nNr',t:'Sin responder',r:1,h:1,inv:1},{k:'nRj',t:'Rechazados',r:1,h:1,inv:1},{k:'nCa',t:'Cancel. tras aceptar',r:1,h:1,inv:1},{k:'perdidos',t:'Total perdidos',r:1,h:1,inv:1},{k:'acc',t:'Tasa Acept.',r:1,h:1},{k:'fin',t:'Tasa Fin.',r:1,h:1}];
+const CANC_COLS=[{k:'id',t:'Driver ID'},{k:'name',t:'Nombre'},{k:'flota',t:'Flota'},{k:'ofr',t:'Ofrecidos',r:1},{k:'nNr',t:'Sin responder',r:1,h:1,inv:1},{k:'nRj',t:'Rechazados',r:1,h:1,inv:1},{k:'nCa',t:'Cancel. tras aceptar',r:1,h:1,inv:1},{k:'perdidos',t:'Total perdidos',r:1,h:1,inv:1},{k:'acc',t:'Tasa Acept.',r:1,h:1},{k:'fin',t:'Tasa Fin.',r:1,h:1,abs:[60,70,80,90]}];
 function renderCanc(){
   headRow('tCanc',CANC_COLS,state.drivers,renderCanc);
   const q=($('fCancQ').value||'').toLowerCase();
   let rows=state.drivers.filter(d=>!q||String(d.name||'').toLowerCase().includes(q)||String(d.id).includes(q));
   const so=state.sort.tCanc||{k:'perdidos',d:-1};rows=sortBy(rows,so.k,so.d);
   const hm=heatMaps(rows,CANC_COLS);
-  document.querySelector('#tCanc tbody').innerHTML=rows.map(d=>`<tr><td>${d.id}</td><td>${d.name}</td><td>${d.cid}</td><td class="r">${fmt(d.ofr)}</td><td class="r" style="${hm.nNr(d.nNr)}">${fmt(d.nNr)}</td><td class="r" style="${hm.nRj(d.nRj)}">${fmt(d.nRj)}</td><td class="r" style="${hm.nCa(d.nCa)}">${fmt(d.nCa)}</td><td class="r" style="${hm.perdidos(d.perdidos)}">${fmt(d.perdidos)}</td><td class="r" style="${hm.acc(d.acc)}">${d.acc!=null?fmt(d.acc,2)+'%':'—'}</td><td class="r" style="${hm.fin(d.fin)}">${d.fin!=null?fmt(d.fin,2)+'%':'—'}</td></tr>`).join('')||'<tr><td colspan="10" class="loading">Sin datos</td></tr>';
+  document.querySelector('#tCanc tbody').innerHTML=rows.map(d=>`<tr><td>${d.id}</td><td>${d.name}</td><td>${d.flota}</td><td class="r">${fmt(d.ofr)}</td><td class="r" style="${hm.nNr(d.nNr)}">${fmt(d.nNr)}</td><td class="r" style="${hm.nRj(d.nRj)}">${fmt(d.nRj)}</td><td class="r" style="${hm.nCa(d.nCa)}">${fmt(d.nCa)}</td><td class="r" style="${hm.perdidos(d.perdidos)}">${fmt(d.perdidos)}</td><td class="r" style="${hm.acc(d.acc)}">${d.acc!=null?fmt(d.acc,2)+'%':'—'}</td><td class="r" style="${hm.fin(d.fin)}">${d.fin!=null?fmt(d.fin,2)+'%':'—'}</td></tr>`).join('')||'<tr><td colspan="10" class="loading">Sin datos</td></tr>';
 }
 const CO_COLS=[{k:'company',t:'Empresa'},{k:'cid',t:'Company ID'},{k:'cars',t:'Coches',r:1},{k:'lvlCars',t:'Con nivel',r:1},{k:'earn',t:'GMV Neto',r:1},{k:'comp',t:'Compensación',r:1},{k:'pct',t:'% Comp.',r:1}];
 function renderCos(){
@@ -590,7 +644,7 @@ function renderCos(){
   document.querySelector('#tCos tbody').innerHTML=rows.map(o=>`<tr><td>${o.company||o.cid}</td><td>${o.cid}</td><td class="r">${o.cars}</td><td class="r">${o.lvlCars||'—'}</td><td class="r">${eur(o.earn,2)}</td><td class="r">${o.comp>0?'<b style="color:var(--green)">'+eur(o.comp,2)+'</b>':'—'}</td><td class="r">${o.comp>0?fmt(o.pct,2)+'%':'—'}</td></tr>`).join('');
 }
 
-const DRV_COLS=[{k:'id',t:'Driver ID'},{k:'name',t:'Nombre'},{k:'cid',t:'Company ID'},{k:'oh',t:'OH',r:1,h:1},{k:'poh',t:'OH Pico',r:1,h:1},{k:'ppeak',t:'% Pico',r:1,h:1},{k:'util',t:'% Util.',r:1,h:1},{k:'pm30',t:'% M30',r:1,h:1},{k:'pair',t:'% Aerop.',r:1,h:1,inv:1},{k:'eph',t:'Net EPH',r:1,h:1},{k:'earn',t:'Facturación',r:1,h:1},{k:'acc',t:'Tasa Acept.',r:1,h:1},{k:'fin',t:'Tasa Fin.',r:1,h:1}];
+const DRV_COLS=[{k:'id',t:'Driver ID'},{k:'name',t:'Nombre'},{k:'flota',t:'Flota'},{k:'oh',t:'OH',r:1,h:1},{k:'poh',t:'OH Pico',r:1,h:1},{k:'ppeak',t:'% Pico',r:1,h:1},{k:'util',t:'% Util.',r:1,h:1},{k:'pm30',t:'% M30',r:1,h:1},{k:'pair',t:'% Aerop.',r:1,h:1,inv:1},{k:'eph',t:'Net EPH',r:1,h:1,abs:[10,13,15,20]},{k:'earn',t:'Facturación',r:1,h:1},{k:'acc',t:'Tasa Acept.',r:1,h:1},{k:'fin',t:'Tasa Fin.',r:1,h:1,abs:[60,70,80,90]}];
 // Heatmap: 5 niveles discretos (quintiles), tonos suaves con texto oscuro para máxima legibilidad
 const HEAT_BUCKETS=[
  {bg:'#F5DBD8',fg:'#8C2B24'},  // 1 · muy bajo
@@ -612,9 +666,16 @@ function heatMaps(rows,cols){
       if(v==null||isNaN(v)||!vals.length)return'';
       let lo=0,hi=vals.length;
       while(lo<hi){const mid=(lo+hi)>>1;if(vals[mid]<=v)lo=mid+1;else hi=mid;}
-      let p=vals.length>1?lo/vals.length:0.5;
-      if(c.inv)p=1-p; // métricas inversas: más alto = peor (p. ej. % Aeropuerto)
-      return heatColor(p);
+      let bi;
+      if(c.abs){ // escala absoluta anclada a los umbrales del acuerdo (p. ej. EPH 15, tasa fin 80)
+        bi=0;for(const t of c.abs)if(v>=t)bi++;
+      }else{
+        let p=vals.length>1?lo/vals.length:0.5;
+        if(c.inv)p=1-p; // métricas inversas: más alto = peor (p. ej. % Aeropuerto)
+        bi=Math.max(0,Math.min(4,Math.floor(p*5)));
+      }
+      const b=HEAT_BUCKETS[bi];
+      return`background:${b.bg};color:${b.fg};font-weight:600`;
     };
   });
   return maps;
@@ -622,10 +683,30 @@ function heatMaps(rows,cols){
 function renderDrv(){
   headRow('tDrv',DRV_COLS,state.drivers,renderDrv);
   const q=($('fDrvQ').value||'').toLowerCase();
-  let rows=state.drivers.filter(d=>!q||String(d.name||'').toLowerCase().includes(q)||String(d.id).includes(q));
+  const fl=$('fDrvFlota')?$('fDrvFlota').value:'';
+  const base=state.drivers.filter(d=>(!fl||String(d.cid)===fl));
+  // Categorías excluyentes de riesgo (Net EPH <16€ y/o Tasa Fin. <80%)
+  const isE=d=>d.eph!=null&&d.fin!=null&&d.eph<16&&d.fin>=80;
+  const isF=d=>d.eph!=null&&d.fin!=null&&d.fin<80&&d.eph>=16;
+  const isB=d=>d.eph!=null&&d.fin!=null&&d.eph<16&&d.fin<80;
+  const nE=base.filter(isE).length,nF=base.filter(isF).length,nB=base.filter(isB).length;
+  const R=state.drvRisk||'';
+  $('drvRisk').innerHTML=[
+    ['eph','Net EPH crítico · <16€ con FR ≥80%',nE,'#B8860B'],
+    ['fr','FR crítico · <80% con EPH ≥16€',nF,'#C0392B'],
+    ['both','Ambos KPIs críticos',nB,'#7B241C'],
+    ['all','Total conductores críticos',nE+nF+nB,'#0C2C1C']
+  ].map(([k,l,n,c])=>`<div class="rcard${R===k?' on':''}" data-r="${k}" style="--rc:${c}"><div class="rn">${n} <small>(${fmt(n*100/(base.length||1),1)}%)</small></div><div class="rl">${l}</div></div>`).join('');
+  $('drvRisk').querySelectorAll('.rcard').forEach(el=>{el.onclick=()=>{
+    state.drvRisk=state.drvRisk===el.dataset.r?'':el.dataset.r;
+    // al activar una tarjeta, ordenar por el peor KPI de esa categoría
+    if(state.drvRisk){const SM={eph:{k:'eph',d:1},fr:{k:'fin',d:1},both:{k:'eph',d:1},all:{k:'fin',d:1}};state.sort.tDrv=SM[state.drvRisk];}
+    renderDrv();};});
+  const okRisk=d=>R===''?true:R==='eph'?isE(d):R==='fr'?isF(d):R==='both'?isB(d):(isE(d)||isF(d)||isB(d));
+  let rows=base.filter(d=>okRisk(d)&&(!q||String(d.name||'').toLowerCase().includes(q)||String(d.flota||'').toLowerCase().includes(q)||String(d.id).includes(q)));
   const s=state.sort.tDrv||{k:'oh',d:-1};rows=sortBy(rows,s.k,s.d);
   const hm=heatMaps(rows,DRV_COLS);
-  document.querySelector('#tDrv tbody').innerHTML=rows.map(d=>`<tr><td>${d.id}</td><td>${d.name}</td><td>${d.cid}</td><td class="r" style="${hm.oh(d.oh)}">${fmt(d.oh,2)}</td><td class="r" style="${hm.poh(d.poh)}">${fmt(d.poh,2)}</td><td class="r" style="${hm.ppeak(d.ppeak)}">${d.ppeak!=null?fmt(d.ppeak,2)+'%':'—'}</td><td class="r" style="${hm.util(d.util)}">${d.util!=null?fmt(d.util,2)+'%':'—'}</td><td class="r" style="${hm.pm30(d.pm30)}">${d.pm30!=null?fmt(d.pm30,2)+'%':'—'}</td><td class="r" style="${hm.pair(d.pair)}">${d.pair!=null?fmt(d.pair,2)+'%':'—'}</td><td class="r" style="${hm.eph(d.eph)}">${fmt(d.eph,2)}</td><td class="r" style="${hm.earn(d.earn)}">${eur(d.earn,2)}</td><td class="r" style="${hm.acc(d.acc)}">${d.acc!=null?fmt(d.acc,2)+'%':'—'}</td><td class="r" style="${hm.fin(d.fin)}">${d.fin!=null?fmt(d.fin,2)+'%':'—'}</td></tr>`).join('')||'<tr><td colspan="13" class="loading">Sin datos</td></tr>';
+  document.querySelector('#tDrv tbody').innerHTML=rows.map(d=>`<tr><td>${d.id}</td><td>${d.name}</td><td>${d.flota}</td><td class="r" style="${hm.oh(d.oh)}">${fmt(d.oh,2)}</td><td class="r" style="${hm.poh(d.poh)}">${fmt(d.poh,2)}</td><td class="r" style="${hm.ppeak(d.ppeak)}">${d.ppeak!=null?fmt(d.ppeak,2)+'%':'—'}</td><td class="r" style="${hm.util(d.util)}">${d.util!=null?fmt(d.util,2)+'%':'—'}</td><td class="r" style="${hm.pm30(d.pm30)}">${d.pm30!=null?fmt(d.pm30,2)+'%':'—'}</td><td class="r" style="${hm.pair(d.pair)}">${d.pair!=null?fmt(d.pair,2)+'%':'—'}</td><td class="r" style="${hm.eph(d.eph)}">${fmt(d.eph,2)}</td><td class="r" style="${hm.earn(d.earn)}">${eur(d.earn,2)}</td><td class="r" style="${hm.acc(d.acc)}">${d.acc!=null?fmt(d.acc,2)+'%':'—'}</td><td class="r" style="${hm.fin(d.fin)}">${d.fin!=null?fmt(d.fin,2)+'%':'—'}</td></tr>`).join('')||'<tr><td colspan="13" class="loading">Sin datos</td></tr>';
 }
 
 function renderPeak(){
@@ -649,7 +730,7 @@ document.querySelectorAll('.tabs .tab').forEach(t=>t.onclick=()=>{
   document.querySelectorAll('.panel').forEach(x=>x.classList.remove('on'));
   t.classList.add('on');$('p-'+t.dataset.p).classList.add('on');
 });
-$('fQ').oninput=renderCars;$('fLvl').onchange=renderCars;$('fDrvQ').oninput=renderDrv;$('fCancQ').oninput=renderCanc;
+$('fQ').oninput=renderCars;$('fLvl').onchange=renderCars;$('fDrvQ').oninput=renderDrv;$('fDrvFlota').onchange=renderDrv;$('fCancQ').oninput=renderCanc;
 
 // Toggle vista diaria/semanal
 function setView(v){
@@ -686,6 +767,9 @@ setInterval(()=>{
   }
   sel.value=def;
   sel.onchange=()=>load(sel.value);
+  const step=d=>{const i=sel.selectedIndex+d;if(i>=0&&i<sel.options.length){sel.selectedIndex=i;load(sel.value);}};
+  if($('mPrev'))$('mPrev').onclick=()=>step(-1);
+  if($('mNext'))$('mNext').onclick=()=>step(1);
   if(window.BAKED){
     const bm=Object.keys(window.BAKED).sort();
     sel.innerHTML=bm.map(mo=>`<option value="${mo}">${names[parseInt(mo.slice(5))]} ${mo.slice(0,4)}</option>`).join('');
