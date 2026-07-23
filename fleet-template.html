@@ -350,34 +350,34 @@ function inProgress(m){
   return m===`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
 }
 
-function qKpi(s,e){return `SELECT ROUND(SUM(CAST(gmv_eur AS DOUBLE))*0.75,2) gmv_neto, ROUND(SUM(CAST(gmv_eur AS DOUBLE)),2) gmv_bruto, SUM(finished_rides) rides, COUNT(DISTINCT driver_car_id) cars, COUNT(DISTINCT driver_id) drivers FROM ng_public_spark.etl_partner_data WHERE company_id IN (${OTTO}) AND created_date_local BETWEEN '${s}' AND '${e}'`;}
-function qDailyGmv(s,e){return `SELECT CAST(created_date_local AS STRING) d, ROUND(SUM(CAST(gmv_eur AS DOUBLE))*0.75,2) gmv, SUM(finished_rides) rides, ROUND(SUM(finished_rides)*100.0/NULLIF(SUM(accepted_orders_tries)-SUM(client_cancelled_after_accepted_tries)-SUM(client_cancelled_after_arrived_tries)-SUM(client_cancelled_after_pickup_tries)-SUM(client_noshows_tries)-SUM(payment_booking_fails_tries),0),1) fin_leg, ROUND((SUM(accepted_orders_tries)-SUM(driver_rejection_after_acceptance_tries))*100.0/NULLIF(SUM(accepted_orders_tries)+SUM(driver_nonresponses_tries)+SUM(driver_rejection_before_acceptance_tries),0),1) fin_con FROM ng_public_spark.etl_partner_data WHERE company_id IN (${OTTO}) AND created_date_local BETWEEN '${s}' AND '${e}' GROUP BY 1 ORDER BY 1`;}
+function qKpi(s,e){return `SELECT ROUND(SUM(CAST(gmv_eur AS DOUBLE))*0.75,2) gmv_neto, ROUND(SUM(CAST(gmv_eur AS DOUBLE)),2) gmv_bruto, SUM(finished_rides) rides, COUNT(DISTINCT driver_car_id) cars, COUNT(DISTINCT driver_id) drivers FROM main.ng_public.etl_partner_data WHERE company_id IN (${OTTO}) AND created_date_local BETWEEN '${s}' AND '${e}'`;}
+function qDailyGmv(s,e){return `SELECT CAST(created_date_local AS STRING) d, ROUND(SUM(CAST(gmv_eur AS DOUBLE))*0.75,2) gmv, SUM(finished_rides) rides, ROUND(SUM(finished_rides)*100.0/NULLIF(SUM(accepted_orders_tries)-SUM(client_cancelled_after_accepted_tries)-SUM(client_cancelled_after_arrived_tries)-SUM(client_cancelled_after_pickup_tries)-SUM(client_noshows_tries)-SUM(payment_booking_fails_tries),0),1) fin_leg, ROUND((SUM(accepted_orders_tries)-SUM(driver_rejection_after_acceptance_tries))*100.0/NULLIF(SUM(accepted_orders_tries)+SUM(driver_nonresponses_tries)+SUM(driver_rejection_before_acceptance_tries),0),1) fin_con FROM main.ng_public.etl_partner_data WHERE company_id IN (${OTTO}) AND created_date_local BETWEEN '${s}' AND '${e}' GROUP BY 1 ORDER BY 1`;}
 // Regiones (misma fuente que Looker admin_system_region): M-30 = 2185, Madrid Aeropuerto = 2188
 const REGION_M30=2185, REGION_AIR=2188;
-function qDailyOh(s,e){return `SELECT CAST(DATE(CONVERT_TIMEZONE('Europe/Madrid',period)) AS STRING) d, ROUND(SUM(has_order+waiting_orders)/60.0,1) oh, ROUND(SUM(has_order)/60.0,1) busy, ROUND(SUM(${PEAK_CASE})/60.0,1) poh, ROUND(SUM(CASE WHEN region_id=${REGION_M30} THEN has_order+waiting_orders ELSE 0 END)/60.0,1) m30, ROUND(SUM(CASE WHEN region_id=${REGION_AIR} THEN has_order+waiting_orders ELSE 0 END)/60.0,1) air FROM ng_public_spark.etl_driver_car_online_hour_activity WHERE period_date BETWEEN date_sub('${s}',1) AND date_add('${e}',1) AND DATE(CONVERT_TIMEZONE('Europe/Madrid',period)) BETWEEN '${s}' AND '${e}' AND driver_id IN (SELECT DISTINCT target_id FROM ng_public_spark.vw_fleet_driver WHERE company_id IN (${OTTO})) GROUP BY 1 ORDER BY 1`;}
-function qOhTot(s,e){return `SELECT ROUND(SUM(has_order+waiting_orders)/60.0,1) oh_t, ROUND(SUM(has_order)/60.0,1) busy_t, ROUND(SUM(${PEAK_CASE})/60.0,1) poh_t, ROUND(SUM(CASE WHEN region_id=${REGION_M30} THEN has_order+waiting_orders ELSE 0 END)/60.0,1) m30_t, ROUND(SUM(CASE WHEN region_id=${REGION_AIR} THEN has_order+waiting_orders ELSE 0 END)/60.0,1) air_t FROM ng_public_spark.etl_driver_car_online_hour_activity WHERE period_date BETWEEN date_sub('${s}',1) AND date_add('${e}',1) AND DATE(CONVERT_TIMEZONE('Europe/Madrid',period)) BETWEEN '${s}' AND '${e}' AND driver_id IN (SELECT DISTINCT target_id FROM ng_public_spark.vw_fleet_driver WHERE company_id IN (${OTTO}))`;}
+function qDailyOh(s,e){return `SELECT CAST(DATE(CONVERT_TIMEZONE('Europe/Madrid',period)) AS STRING) d, ROUND(SUM(has_order+waiting_orders)/60.0,1) oh, ROUND(SUM(has_order)/60.0,1) busy, ROUND(SUM(${PEAK_CASE})/60.0,1) poh, ROUND(SUM(CASE WHEN region_id=${REGION_M30} THEN has_order+waiting_orders ELSE 0 END)/60.0,1) m30, ROUND(SUM(CASE WHEN region_id=${REGION_AIR} THEN has_order+waiting_orders ELSE 0 END)/60.0,1) air FROM main.ng_public.etl_driver_car_online_hour_activity WHERE period_date BETWEEN date_sub('${s}',1) AND date_add('${e}',1) AND DATE(CONVERT_TIMEZONE('Europe/Madrid',period)) BETWEEN '${s}' AND '${e}' AND driver_id IN (SELECT DISTINCT target_id FROM main.ng_public.vw_fleet_driver WHERE company_id IN (${OTTO})) GROUP BY 1 ORDER BY 1`;}
+function qOhTot(s,e){return `SELECT ROUND(SUM(has_order+waiting_orders)/60.0,1) oh_t, ROUND(SUM(has_order)/60.0,1) busy_t, ROUND(SUM(${PEAK_CASE})/60.0,1) poh_t, ROUND(SUM(CASE WHEN region_id=${REGION_M30} THEN has_order+waiting_orders ELSE 0 END)/60.0,1) m30_t, ROUND(SUM(CASE WHEN region_id=${REGION_AIR} THEN has_order+waiting_orders ELSE 0 END)/60.0,1) air_t FROM main.ng_public.etl_driver_car_online_hour_activity WHERE period_date BETWEEN date_sub('${s}',1) AND date_add('${e}',1) AND DATE(CONVERT_TIMEZONE('Europe/Madrid',period)) BETWEEN '${s}' AND '${e}' AND driver_id IN (SELECT DISTINCT target_id FROM main.ng_public.vw_fleet_driver WHERE company_id IN (${OTTO}))`;}
 function qCars(s,e){return `WITH act AS (
  SELECT car_id, ROUND(SUM(has_order+waiting_orders)/60.0,1) oh, ROUND(SUM(${PEAK_CASE})/60.0,1) poh
- FROM ng_public_spark.etl_driver_car_online_hour_activity
+ FROM main.ng_public.etl_driver_car_online_hour_activity
  WHERE period_date BETWEEN date_sub('${s}',1) AND date_add('${e}',1) AND DATE(CONVERT_TIMEZONE('Europe/Madrid',period)) BETWEEN '${s}' AND '${e}'
-   AND driver_id IN (SELECT DISTINCT target_id FROM ng_public_spark.vw_fleet_driver WHERE company_id IN (${OTTO}))
+   AND driver_id IN (SELECT DISTINCT target_id FROM main.ng_public.vw_fleet_driver WHERE company_id IN (${OTTO}))
  GROUP BY car_id),
 pd AS (
  SELECT driver_car_id, ROUND(SUM(CAST(gmv_eur AS DOUBLE))*0.75,2) earn, SUM(finished_rides) rides,
    ROUND(SUM(finished_rides)*100.0/NULLIF(SUM(accepted_orders_tries)-SUM(client_cancelled_after_accepted_tries)-SUM(client_cancelled_after_arrived_tries)-SUM(client_cancelled_after_pickup_tries)-SUM(client_noshows_tries)-SUM(payment_booking_fails_tries),0),1) fin_leg,
    SUM(driver_rejection_after_acceptance_tries) ra_cnt
- FROM ng_public_spark.etl_partner_data
+ FROM main.ng_public.etl_partner_data
  WHERE company_id IN (${OTTO}) AND created_date_local BETWEEN '${s}' AND '${e}'
  GROUP BY driver_car_id),
 ar AS (
  SELECT vehicle_id, SUM(required_orders_count) req, SUM(accepted_required_orders_count) acc_req
- FROM ng_public_spark.driver_reporting_vehicle_acceptance_rate_day
+ FROM main.ng_public.driver_reporting_vehicle_acceptance_rate_day
  WHERE company_id IN (${OTTO}) AND date BETWEEN '${s}' AND '${e}'
  GROUP BY vehicle_id),
 brand AS (
  SELECT DISTINCT pe.target_id car_id
- FROM ng_public_spark.conditional_campaigns_period_enrollment pe
- JOIN ng_public_spark.conditional_campaigns_campaign camp ON pe.campaign_id=camp.id
+ FROM main.ng_public.conditional_campaigns_period_enrollment pe
+ JOIN main.ng_public.conditional_campaigns_campaign camp ON pe.campaign_id=camp.id
  WHERE pe.target_type='car' AND camp.name LIKE '%CarBranding%'
    AND DATE(CONVERT_TIMEZONE('Europe/Madrid',camp.start)) BETWEEN '${s}' AND '${e}')
 SELECT car.id car_id, car.company_id cid, car.normalized_reg_number reg,
@@ -388,8 +388,8 @@ SELECT car.id car_id, car.company_id cid, car.normalized_reg_number reg,
  p.earn, p.rides,
  CASE WHEN b.car_id IS NOT NULL THEN 1 ELSE 0 END branding
 FROM pd p
-JOIN ng_public_spark.fleet_car car ON car.id=p.driver_car_id
-JOIN ng_public_spark.fleet_company co ON co.id=car.company_id
+JOIN main.ng_public.fleet_car car ON car.id=p.driver_car_id
+JOIN main.ng_public.fleet_company co ON co.id=car.company_id
 LEFT JOIN act a ON a.car_id=p.driver_car_id
 LEFT JOIN ar r ON r.vehicle_id=p.driver_car_id
 LEFT JOIN brand b ON b.car_id=p.driver_car_id
@@ -399,21 +399,21 @@ function qDrv(s,e){return `WITH a AS (
  SELECT driver_id, ROUND(SUM(has_order+waiting_orders)/60.0,1) oh, ROUND(SUM(has_order)/60.0,1) busy, ROUND(SUM(${PEAK_CASE})/60.0,1) poh,
    ROUND(SUM(CASE WHEN region_id=${REGION_M30} THEN has_order+waiting_orders ELSE 0 END)*100.0/NULLIF(SUM(has_order+waiting_orders),0),1) pm30,
    ROUND(SUM(CASE WHEN region_id=${REGION_AIR} THEN has_order+waiting_orders ELSE 0 END)*100.0/NULLIF(SUM(has_order+waiting_orders),0),1) pair
- FROM ng_public_spark.etl_driver_car_online_hour_activity
+ FROM main.ng_public.etl_driver_car_online_hour_activity
  WHERE period_date BETWEEN date_sub('${s}',1) AND date_add('${e}',1) AND DATE(CONVERT_TIMEZONE('Europe/Madrid',period)) BETWEEN '${s}' AND '${e}'
-   AND driver_id IN (SELECT DISTINCT target_id FROM ng_public_spark.vw_fleet_driver WHERE company_id IN (${OTTO}))
+   AND driver_id IN (SELECT DISTINCT target_id FROM main.ng_public.vw_fleet_driver WHERE company_id IN (${OTTO}))
  GROUP BY driver_id),
 e AS (
  SELECT driver_id, MAX(company_id) cid, ROUND(SUM(CAST(gmv_eur AS DOUBLE))*0.75,2) earn,
    SUM(accepted_orders_tries) n_acc, SUM(driver_nonresponses_tries) n_nr, SUM(driver_rejection_before_acceptance_tries) n_rj, SUM(driver_rejection_after_acceptance_tries) n_ca, SUM(finished_rides) n_fin,
    ROUND(SUM(finished_rides)*100.0/NULLIF(SUM(accepted_orders_tries)-SUM(client_cancelled_after_accepted_tries)-SUM(client_cancelled_after_arrived_tries)-SUM(client_cancelled_after_pickup_tries)-SUM(client_noshows_tries)-SUM(payment_booking_fails_tries),0),1) fin_leg,
    SUM(driver_rejection_after_acceptance_tries) ra_cnt
- FROM ng_public_spark.etl_partner_data
+ FROM main.ng_public.etl_partner_data
  WHERE company_id IN (${OTTO}) AND created_date_local BETWEEN '${s}' AND '${e}'
  GROUP BY driver_id),
 ar AS (
  SELECT driver_id, SUM(required_orders_count) req, SUM(accepted_required_orders_count) acc_req
- FROM ng_public_spark.driver_reporting_driver_acceptance_rate_day
+ FROM main.ng_public.driver_reporting_driver_acceptance_rate_day
  WHERE company_id IN (${OTTO}) AND date BETWEEN '${s}' AND '${e}'
  GROUP BY driver_id)
 SELECT e.driver_id, CONCAT(fd.first_name,' ',fd.last_name) name, e.cid,
@@ -426,7 +426,7 @@ SELECT e.driver_id, CONCAT(fd.first_name,' ',fd.last_name) name, e.cid,
  e.n_acc, e.n_nr, e.n_rj, e.n_ca, e.n_fin
 FROM e JOIN a ON a.driver_id=e.driver_id
 LEFT JOIN ar r ON r.driver_id=e.driver_id
-LEFT JOIN ng_public_spark.vw_fleet_driver fd ON fd.target_id=e.driver_id
+LEFT JOIN main.ng_public.vw_fleet_driver fd ON fd.target_id=e.driver_id
 WHERE a.oh>=1 ORDER BY a.oh DESC LIMIT 400`;}
 
 function carLevel(c){
