@@ -184,10 +184,10 @@ th.r{text-align:right}
         <ul>
           <li><b>Flotas incluidas</b>: se descarga el Google Sheet "Madrid Grouping" al abrir y se usan los Company IDs con FO = OTTOCABS SL.</li>
           <li><b>Facturación (GMV) bruta</b>: suma de gmv_eur (etl_partner_data) del mes. <b>Neta</b>: bruta × 0,75 (comisión Bolt 25% fija del acuerdo). El portal de flotas aplica la comisión real de cada viaje (±0,3%).</li>
-          <li><b>Online Hours (OH)</b>: minutos con viaje (has_order) + esperando viajes (waiting_orders) de etl_driver_car_online_hour_activity, ÷60. Misma fuente para flota, coche y conductor. Tolerancia ±1% vs portal (que calcula desde sesiones en crudo).</li>
-          <li><b>OH Pico</b>: mismas horas filtradas por la matriz del acuerdo (Lun–Mié 7-9 y 17-20 · Jue 7-9 y 17-23 · Vie 0-1, 7-9 y 16-23 · Sáb y Dom completos, hora local).</li>
-          <li><b>Utilización</b>: has_order ÷ (has_order + waiting_orders) — % de horas online con viaje. Nunca puede superar 100%.</li>
-          <li><b>% M30</b>: OH con region_id 2185 (Madrid M-30) ÷ OH totales. <b>% Aeropuerto</b>: OH con region_id 2188 (Madrid Aeropuerto) ÷ OH totales. Misma fuente de regiones que el Looker (admin_system_region).</li>
+          <li><b>Online Hours (OH)</b>: has_order_seconds + waiting_orders_seconds de <code>driver_online_hours_daily</code> (la tabla transaccional del portal de flotas, día local ya resuelto) ÷ 3600. Misma fuente para flota, coche y conductor. Cuadra al minuto con el "Tiempo de conexión" del portal.</li>
+          <li><b>OH Pico</b>: desglose horario (per_hour_breakdown) de la misma tabla, filtrado por la matriz del acuerdo (Lun–Mié 7-9 y 17-20 · Jue 7-9 y 17-23 · Vie 0-1, 7-9 y 16-23 · Sáb y Dom completos, hora local).</li>
+          <li><b>Utilización</b>: has_order_seconds ÷ (has_order_seconds + waiting_orders_seconds) — % de horas online con viaje. Nunca puede superar 100%.</li>
+          <li><b>% M30</b>: OH con region_id 2185 (Madrid M-30) ÷ OH totales. <b>% Aeropuerto</b>: region_id 2188 ÷ OH totales. El reparto regional viene de etl_driver_car_online_hour_activity (la tabla del portal no trae región); al ser porcentajes, el pequeño sesgo de esa tabla se cancela.</li>
           <li><b>EPH Neto</b>: facturación neta ÷ OH. <b>RPH</b>: viajes finalizados ÷ OH.</li>
           <li><b>Tasa de finalización</b> (definición del contrato, vigente desde julio 2026, sobre viajes dentro del radio): (aceptados en radio − cancelados por el conductor tras aceptar) ÷ viajes ofrecidos dentro del radio (non-optional). Los viajes fuera del radio y las cancelaciones del pasajero no cuentan. Hasta junio 2026 se mantiene la fórmula con la que se evaluaron esos meses.</li>
           <li><b>Tasa de aceptación</b> (sobre viajes dentro del radio): aceptados en radio ÷ ofrecidos dentro del radio. Fuente: driver_reporting_*_acceptance_rate_day.</li>
@@ -354,14 +354,68 @@ function qKpi(s,e){return `SELECT ROUND(SUM(CAST(gmv_eur AS DOUBLE))*0.75,2) gmv
 function qDailyGmv(s,e){return `SELECT CAST(created_date_local AS STRING) d, ROUND(SUM(CAST(gmv_eur AS DOUBLE))*0.75,2) gmv, SUM(finished_rides) rides, ROUND(SUM(finished_rides)*100.0/NULLIF(SUM(accepted_orders_tries)-SUM(client_cancelled_after_accepted_tries)-SUM(client_cancelled_after_arrived_tries)-SUM(client_cancelled_after_pickup_tries)-SUM(client_noshows_tries)-SUM(payment_booking_fails_tries),0),1) fin_leg, ROUND((SUM(accepted_orders_tries)-SUM(driver_rejection_after_acceptance_tries))*100.0/NULLIF(SUM(accepted_orders_tries)+SUM(driver_nonresponses_tries)+SUM(driver_rejection_before_acceptance_tries),0),1) fin_con FROM main.ng_public.etl_partner_data WHERE company_id IN (${OTTO}) AND created_date_local BETWEEN '${s}' AND '${e}' GROUP BY 1 ORDER BY 1`;}
 // Regiones (misma fuente que Looker admin_system_region): M-30 = 2185, Madrid Aeropuerto = 2188
 const REGION_M30=2185, REGION_AIR=2188;
-function qDailyOh(s,e){return `SELECT CAST(DATE(CONVERT_TIMEZONE('Europe/Madrid',period)) AS STRING) d, ROUND(SUM(has_order+waiting_orders)/60.0,1) oh, ROUND(SUM(has_order)/60.0,1) busy, ROUND(SUM(${PEAK_CASE})/60.0,1) poh, ROUND(SUM(CASE WHEN region_id=${REGION_M30} THEN has_order+waiting_orders ELSE 0 END)/60.0,1) m30, ROUND(SUM(CASE WHEN region_id=${REGION_AIR} THEN has_order+waiting_orders ELSE 0 END)/60.0,1) air FROM main.ng_public.etl_driver_car_online_hour_activity WHERE period_date BETWEEN date_sub('${s}',1) AND date_add('${e}',1) AND DATE(CONVERT_TIMEZONE('Europe/Madrid',period)) BETWEEN '${s}' AND '${e}' AND driver_id IN (SELECT DISTINCT target_id FROM main.ng_public.vw_fleet_driver WHERE company_id IN (${OTTO})) GROUP BY 1 ORDER BY 1`;}
-function qOhTot(s,e){return `SELECT ROUND(SUM(has_order+waiting_orders)/60.0,1) oh_t, ROUND(SUM(has_order)/60.0,1) busy_t, ROUND(SUM(${PEAK_CASE})/60.0,1) poh_t, ROUND(SUM(CASE WHEN region_id=${REGION_M30} THEN has_order+waiting_orders ELSE 0 END)/60.0,1) m30_t, ROUND(SUM(CASE WHEN region_id=${REGION_AIR} THEN has_order+waiting_orders ELSE 0 END)/60.0,1) air_t FROM main.ng_public.etl_driver_car_online_hour_activity WHERE period_date BETWEEN date_sub('${s}',1) AND date_add('${e}',1) AND DATE(CONVERT_TIMEZONE('Europe/Madrid',period)) BETWEEN '${s}' AND '${e}' AND driver_id IN (SELECT DISTINCT target_id FROM main.ng_public.vw_fleet_driver WHERE company_id IN (${OTTO}))`;}
-function qCars(s,e){return `WITH act AS (
- SELECT car_id, ROUND(SUM(has_order+waiting_orders)/60.0,1) oh, ROUND(SUM(${PEAK_CASE})/60.0,1) poh
+function qDailyOh(s,e){return `WITH oh AS (
+ SELECT date d, ROUND(SUM(has_order_seconds+waiting_orders_seconds)/3600.0,1) oh, ROUND(SUM(has_order_seconds)/3600.0,1) busy
+ FROM main.ng_public.driver_online_hours_daily
+ WHERE company_id IN (${OTTO}) AND date BETWEEN '${s}' AND '${e}'
+ GROUP BY date),
+pk AS (
+ SELECT dd d, ROUND(SUM(CASE
+ WHEN dayofweek(dt) IN (2,3,4) AND h IN (7,8,9,17,18,19,20) THEN sec
+ WHEN dayofweek(dt)=5 AND h IN (7,8,9,17,18,19,20,21,22,23) THEN sec
+ WHEN dayofweek(dt)=6 AND h IN (0,1,7,8,9,16,17,18,19,20,21,22,23) THEN sec
+ WHEN dayofweek(dt) IN (1,7) THEN sec ELSE 0 END)/3600.0,1) poh
+ FROM (SELECT d.date dd, CAST(d.date AS DATE) dt, CAST(k AS INT) h, v.has_order_seconds+v.waiting_orders_seconds sec
+   FROM main.ng_public.driver_online_hours_daily d
+   LATERAL VIEW EXPLODE(from_json(d.per_hour_breakdown,'MAP<STRING, STRUCT<busy_seconds: BIGINT, has_order_seconds: BIGINT, waiting_orders_seconds: BIGINT>>')) x AS k, v
+   WHERE d.company_id IN (${OTTO}) AND d.date BETWEEN '${s}' AND '${e}') z
+ GROUP BY dd),
+reg AS (
+ SELECT CAST(DATE(CONVERT_TIMEZONE('Europe/Madrid',period)) AS STRING) d,
+  ROUND(SUM(CASE WHEN region_id=${REGION_M30} THEN has_order+waiting_orders ELSE 0 END)/60.0,1) m30,
+  ROUND(SUM(CASE WHEN region_id=${REGION_AIR} THEN has_order+waiting_orders ELSE 0 END)/60.0,1) air
  FROM main.ng_public.etl_driver_car_online_hour_activity
  WHERE period_date BETWEEN date_sub('${s}',1) AND date_add('${e}',1) AND DATE(CONVERT_TIMEZONE('Europe/Madrid',period)) BETWEEN '${s}' AND '${e}'
-   AND driver_id IN (SELECT DISTINCT target_id FROM main.ng_public.vw_fleet_driver WHERE company_id IN (${OTTO}))
- GROUP BY car_id),
+  AND driver_id IN (SELECT DISTINCT target_id FROM main.ng_public.vw_fleet_driver WHERE company_id IN (${OTTO}))
+ GROUP BY 1)
+SELECT oh.d, oh.oh, oh.busy, COALESCE(pk.poh,0) poh, COALESCE(reg.m30,0) m30, COALESCE(reg.air,0) air
+FROM oh LEFT JOIN pk ON pk.d=oh.d LEFT JOIN reg ON reg.d=oh.d ORDER BY oh.d`;}
+function qOhTot(s,e){return `WITH t AS (
+ SELECT ROUND(SUM(has_order_seconds+waiting_orders_seconds)/3600.0,1) oh_t, ROUND(SUM(has_order_seconds)/3600.0,1) busy_t
+ FROM main.ng_public.driver_online_hours_daily WHERE company_id IN (${OTTO}) AND date BETWEEN '${s}' AND '${e}'),
+p AS (
+ SELECT ROUND(SUM(CASE
+ WHEN dayofweek(dt) IN (2,3,4) AND h IN (7,8,9,17,18,19,20) THEN sec
+ WHEN dayofweek(dt)=5 AND h IN (7,8,9,17,18,19,20,21,22,23) THEN sec
+ WHEN dayofweek(dt)=6 AND h IN (0,1,7,8,9,16,17,18,19,20,21,22,23) THEN sec
+ WHEN dayofweek(dt) IN (1,7) THEN sec ELSE 0 END)/3600.0,1) poh_t
+ FROM (SELECT CAST(d.date AS DATE) dt, CAST(k AS INT) h, v.has_order_seconds+v.waiting_orders_seconds sec
+   FROM main.ng_public.driver_online_hours_daily d
+   LATERAL VIEW EXPLODE(from_json(d.per_hour_breakdown,'MAP<STRING, STRUCT<busy_seconds: BIGINT, has_order_seconds: BIGINT, waiting_orders_seconds: BIGINT>>')) x AS k, v
+   WHERE d.company_id IN (${OTTO}) AND d.date BETWEEN '${s}' AND '${e}') z),
+r AS (
+ SELECT ROUND(SUM(CASE WHEN region_id=${REGION_M30} THEN has_order+waiting_orders ELSE 0 END)/60.0,1) m30_t,
+        ROUND(SUM(CASE WHEN region_id=${REGION_AIR} THEN has_order+waiting_orders ELSE 0 END)/60.0,1) air_t
+ FROM main.ng_public.etl_driver_car_online_hour_activity
+ WHERE period_date BETWEEN date_sub('${s}',1) AND date_add('${e}',1) AND DATE(CONVERT_TIMEZONE('Europe/Madrid',period)) BETWEEN '${s}' AND '${e}'
+  AND driver_id IN (SELECT DISTINCT target_id FROM main.ng_public.vw_fleet_driver WHERE company_id IN (${OTTO})))
+SELECT t.oh_t, t.busy_t, p.poh_t, r.m30_t, r.air_t FROM t CROSS JOIN p CROSS JOIN r`;}
+function qCars(s,e){return `WITH act AS (
+ SELECT vehicle_id car_id, ROUND(SUM(has_order_seconds+waiting_orders_seconds)/3600.0,1) oh
+ FROM main.ng_public.driver_online_hours_daily
+ WHERE company_id IN (${OTTO}) AND date BETWEEN '${s}' AND '${e}'
+ GROUP BY vehicle_id),
+pk AS (
+ SELECT vid car_id, ROUND(SUM(CASE
+ WHEN dayofweek(dt) IN (2,3,4) AND h IN (7,8,9,17,18,19,20) THEN sec
+ WHEN dayofweek(dt)=5 AND h IN (7,8,9,17,18,19,20,21,22,23) THEN sec
+ WHEN dayofweek(dt)=6 AND h IN (0,1,7,8,9,16,17,18,19,20,21,22,23) THEN sec
+ WHEN dayofweek(dt) IN (1,7) THEN sec ELSE 0 END)/3600.0,1) poh
+ FROM (SELECT d.vehicle_id vid, CAST(d.date AS DATE) dt, CAST(k AS INT) h, v.has_order_seconds+v.waiting_orders_seconds sec
+   FROM main.ng_public.driver_online_hours_daily d
+   LATERAL VIEW EXPLODE(from_json(d.per_hour_breakdown,'MAP<STRING, STRUCT<busy_seconds: BIGINT, has_order_seconds: BIGINT, waiting_orders_seconds: BIGINT>>')) x AS k, v
+   WHERE d.company_id IN (${OTTO}) AND d.date BETWEEN '${s}' AND '${e}') z
+ GROUP BY vid),
 pd AS (
  SELECT driver_car_id, ROUND(SUM(CAST(gmv_eur AS DOUBLE))*0.75,2) earn, SUM(finished_rides) rides,
    ROUND(SUM(finished_rides)*100.0/NULLIF(SUM(accepted_orders_tries)-SUM(client_cancelled_after_accepted_tries)-SUM(client_cancelled_after_arrived_tries)-SUM(client_cancelled_after_pickup_tries)-SUM(client_noshows_tries)-SUM(payment_booking_fails_tries),0),1) fin_leg,
@@ -382,7 +436,7 @@ brand AS (
    AND DATE(CONVERT_TIMEZONE('Europe/Madrid',camp.start)) BETWEEN '${s}' AND '${e}')
 SELECT car.id car_id, car.company_id cid, car.normalized_reg_number reg,
  REPLACE(co.name,'Madrid Fleet ','') company,
- COALESCE(a.oh,0) oh, COALESCE(a.poh,0) poh, p.fin_leg,
+ COALESCE(a.oh,0) oh, COALESCE(p2.poh,0) poh, p.fin_leg,
  ROUND(GREATEST(0,r.acc_req-p.ra_cnt)*100.0/NULLIF(r.req,0),1) fin_con,
  ROUND(r.acc_req*100.0/NULLIF(r.req,0),1) acc,
  p.earn, p.rides,
@@ -391,18 +445,32 @@ FROM pd p
 JOIN main.ng_public.fleet_car car ON car.id=p.driver_car_id
 JOIN main.ng_public.fleet_company co ON co.id=car.company_id
 LEFT JOIN act a ON a.car_id=p.driver_car_id
+LEFT JOIN pk p2 ON p2.car_id=p.driver_car_id
 LEFT JOIN ar r ON r.vehicle_id=p.driver_car_id
 LEFT JOIN brand b ON b.car_id=p.driver_car_id
 WHERE COALESCE(a.oh,0)>=1
 ORDER BY oh DESC LIMIT 400`;}
 function qDrv(s,e){return `WITH a AS (
- SELECT driver_id, ROUND(SUM(has_order+waiting_orders)/60.0,1) oh, ROUND(SUM(has_order)/60.0,1) busy, ROUND(SUM(${PEAK_CASE})/60.0,1) poh,
-   ROUND(SUM(CASE WHEN region_id=${REGION_M30} THEN has_order+waiting_orders ELSE 0 END)*100.0/NULLIF(SUM(has_order+waiting_orders),0),1) pm30,
-   ROUND(SUM(CASE WHEN region_id=${REGION_AIR} THEN has_order+waiting_orders ELSE 0 END)*100.0/NULLIF(SUM(has_order+waiting_orders),0),1) pair
- FROM main.ng_public.etl_driver_car_online_hour_activity
- WHERE period_date BETWEEN date_sub('${s}',1) AND date_add('${e}',1) AND DATE(CONVERT_TIMEZONE('Europe/Madrid',period)) BETWEEN '${s}' AND '${e}'
-   AND driver_id IN (SELECT DISTINCT target_id FROM main.ng_public.vw_fleet_driver WHERE company_id IN (${OTTO}))
- GROUP BY driver_id),
+ SELECT o.driver_id, o.oh, o.busy, COALESCE(p.poh,0) poh, COALESCE(r.pm30,0) pm30, COALESCE(r.pair,0) pair
+ FROM (SELECT driver_id, ROUND(SUM(has_order_seconds+waiting_orders_seconds)/3600.0,1) oh, ROUND(SUM(has_order_seconds)/3600.0,1) busy
+   FROM main.ng_public.driver_online_hours_daily WHERE company_id IN (${OTTO}) AND date BETWEEN '${s}' AND '${e}' GROUP BY driver_id) o
+ LEFT JOIN (SELECT did driver_id, ROUND(SUM(CASE
+ WHEN dayofweek(dt) IN (2,3,4) AND h IN (7,8,9,17,18,19,20) THEN sec
+ WHEN dayofweek(dt)=5 AND h IN (7,8,9,17,18,19,20,21,22,23) THEN sec
+ WHEN dayofweek(dt)=6 AND h IN (0,1,7,8,9,16,17,18,19,20,21,22,23) THEN sec
+ WHEN dayofweek(dt) IN (1,7) THEN sec ELSE 0 END)/3600.0,1) poh
+   FROM (SELECT d.driver_id did, CAST(d.date AS DATE) dt, CAST(k AS INT) h, v.has_order_seconds+v.waiting_orders_seconds sec
+     FROM main.ng_public.driver_online_hours_daily d
+     LATERAL VIEW EXPLODE(from_json(d.per_hour_breakdown,'MAP<STRING, STRUCT<busy_seconds: BIGINT, has_order_seconds: BIGINT, waiting_orders_seconds: BIGINT>>')) x AS k, v
+     WHERE d.company_id IN (${OTTO}) AND d.date BETWEEN '${s}' AND '${e}') z
+   GROUP BY did) p ON p.driver_id=o.driver_id
+ LEFT JOIN (SELECT driver_id,
+     ROUND(SUM(CASE WHEN region_id=${REGION_M30} THEN has_order+waiting_orders ELSE 0 END)*100.0/NULLIF(SUM(has_order+waiting_orders),0),1) pm30,
+     ROUND(SUM(CASE WHEN region_id=${REGION_AIR} THEN has_order+waiting_orders ELSE 0 END)*100.0/NULLIF(SUM(has_order+waiting_orders),0),1) pair
+   FROM main.ng_public.etl_driver_car_online_hour_activity
+   WHERE period_date BETWEEN date_sub('${s}',1) AND date_add('${e}',1) AND DATE(CONVERT_TIMEZONE('Europe/Madrid',period)) BETWEEN '${s}' AND '${e}'
+     AND driver_id IN (SELECT DISTINCT target_id FROM main.ng_public.vw_fleet_driver WHERE company_id IN (${OTTO}))
+   GROUP BY driver_id) r ON r.driver_id=o.driver_id),
 e AS (
  SELECT driver_id, MAX(company_id) cid, ROUND(SUM(CAST(gmv_eur AS DOUBLE))*0.75,2) earn,
    SUM(accepted_orders_tries) n_acc, SUM(driver_nonresponses_tries) n_nr, SUM(driver_rejection_before_acceptance_tries) n_rj, SUM(driver_rejection_after_acceptance_tries) n_ca, SUM(finished_rides) n_fin,
@@ -563,7 +631,7 @@ function render(){
     fsel.innerHTML='<option value="">Todas las flotas</option>'+Object.entries(mm).sort((a,b)=>String(a[1]).localeCompare(String(b[1]))).map(([id,n])=>`<option value="${id}">${n}</option>`).join('');
     fsel.value=[...fsel.options].some(o=>o.value===cur)?cur:'';}}
   drawChart();renderCars();renderCos();renderDrv();renderCanc();renderPeak();applyView();
-  $('footNote').textContent='Flotas: '+fleetSrc+'. Niveles calculados en vivo contra los umbrales del acuerdo (OH, OH pico, tasa fin. ≥80%, EPH ≥15€). Coches branding identificados por campañas CarBranding. Datos a día vencido; el dashboard consulta Databricks al abrirse y se refresca cada hora (9:00–17:00) mientras esté abierto. Vista semanal: semanas completas lun–dom que tocan el mes seleccionado. OH = horas online (con viaje + esperando) de la tabla de actividad; puede diferir ±1% del portal de flotas, que calcula desde sesiones en crudo. '+(prog?'Mes en curso: niveles y compensaciones son provisionales hasta cierre de mes.':'');
+  $('footNote').textContent='Flotas: '+fleetSrc+'. Niveles calculados en vivo contra los umbrales del acuerdo (OH, OH pico, tasa fin. ≥80%, EPH ≥15€). Coches branding identificados por campañas CarBranding. Datos a día vencido; el dashboard consulta Databricks al abrirse y se refresca cada hora (9:00–17:00) mientras esté abierto. Vista semanal: semanas completas lun–dom que tocan el mes seleccionado. OH desde driver_online_hours_daily (misma fuente que el portal de flotas; cuadra al minuto). '+(prog?'Mes en curso: niveles y compensaciones son provisionales hasta cierre de mes.':'');
 }
 
 function weeklyData(){
