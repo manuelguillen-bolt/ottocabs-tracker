@@ -151,6 +151,7 @@ th.r{text-align:right}
     </div>
     <div class="panel" id="p-cos">
       <table id="tCos"><thead></thead><tbody><tr><td class="loading" colspan="7">Cargando…</td></tr></tbody></table>
+      <div id="cosNote" style="display:none;font-size:11px;color:#667085;margin:6px 2px 0">Julio 2026 incluye las excepciones acordadas en la liquidación (coches marcados con * en Detalle por coche).</div>
     </div>
     <div class="panel" id="p-drv">
       <div class="riskcards" id="drvRisk"></div>
@@ -268,6 +269,9 @@ const PEAK_HOURS={1:[7,8,9,17,18,19,20],2:[7,8,9,17,18,19,20],3:[7,8,9,17,18,19,
 const LEVELS=[{lvl:'2.5',oh:440,poh:264,gar:11000},{lvl:'2',oh:400,poh:240,gar:10000},{lvl:'1.5',oh:260,poh:156,gar:6500},{lvl:'1',oh:200,poh:120,gar:5000}];
 // Tasa de finalización: fórmula del contrato (aceptación − cancelación del driver) desde julio 2026; antes, fórmula legada
 const CONTRACT_FIN_FROM='2026-07';
+// Excepciones acordadas SOLO para la liquidacion de julio 2026 (importes fijos pactados):
+const JULY_ADJ={'8431LRC':{lvl:'2.5',gar:11000,comp:3960.20},'8439LRC':{lvl:'1.5',gar:6500,comp:1123.21},'2609LGB':{lvl:'1.5',gar:6500,comp:715.85},'9852LVB':{lvl:'2',gar:10000,comp:2809.15},'7367MFF':{lvl:'2',gar:10000,comp:2090.99},'9992MYY':{lvl:'1.5',gar:6500,comp:1151.22},'6522NKB':{lvl:'1.5',gar:6500,comp:0},'1020MZZ':{lvl:'1.5',gar:6500,comp:1223.90},'6435MWW':{lvl:'1.5',gar:6500,comp:995.37},'8446LRC':{lvl:'1',gar:5000,comp:1622.75},'8464LRC':{lvl:'1',gar:5000,comp:1173.65}};
+const DEC2_FROM='2026-08'; // desde agosto-2026: FR/aceptacion/EPH se muestran y evaluan con 2 decimales; antes, FR redondeada a 1 decimal (criterio liquidacion julio)
 const FIN_MIN=80, EPH_MIN=15, FLEET_OH_TARGET=30000, FLEET_BONUS=0, FLEET_KICKBACK_PCT=0;
 
 let state={month:null,cars:[],drivers:[],daily:[],dailyAll:[],kpi:null,ohTot:0,pohTot:0,busyTot:0,chart:null,sort:{},view:localStorage.getItem('otto_view')||'day'};
@@ -437,8 +441,8 @@ brand AS (
 SELECT car.id car_id, car.company_id cid, car.normalized_reg_number reg,
  REPLACE(co.name,'Madrid Fleet ','') company,
  COALESCE(a.oh,0) oh, COALESCE(p2.poh,0) poh, p.fin_leg,
- ROUND(GREATEST(0,r.acc_req-p.ra_cnt)*100.0/NULLIF(r.req,0),1) fin_con,
- ROUND(r.acc_req*100.0/NULLIF(r.req,0),1) acc,
+ ROUND(GREATEST(0,r.acc_req-p.ra_cnt)*100.0/NULLIF(r.req,0),2) fin_con,
+ ROUND(r.acc_req*100.0/NULLIF(r.req,0),2) acc,
  p.earn, p.rides,
  CASE WHEN b.car_id IS NOT NULL THEN 1 ELSE 0 END branding
 FROM pd p
@@ -489,8 +493,8 @@ SELECT e.driver_id, CONCAT(fd.first_name,' ',fd.last_name) name, e.cid,
  ROUND(a.busy/NULLIF(a.oh,0)*100,1) util,
  a.pm30, a.pair,
  ROUND(e.earn/NULLIF(a.oh,0),2) eph, e.earn, e.fin_leg,
- ROUND(GREATEST(0,r.acc_req-e.ra_cnt)*100.0/NULLIF(r.req,0),1) fin_con,
- ROUND(r.acc_req*100.0/NULLIF(r.req,0),1) acc,
+ ROUND(GREATEST(0,r.acc_req-e.ra_cnt)*100.0/NULLIF(r.req,0),2) fin_con,
+ ROUND(r.acc_req*100.0/NULLIF(r.req,0),2) acc,
  e.n_acc, e.n_nr, e.n_rj, e.n_ca, e.n_fin
 FROM e JOIN a ON a.driver_id=e.driver_id
 LEFT JOIN ar r ON r.driver_id=e.driver_id
@@ -501,7 +505,7 @@ function carLevel(c){
   if(c.branding)return{lvl:'branding',gar:0};
   const eph=c.oh>0?c.earn/c.oh:0;
   for(const L of LEVELS){
-    if(c.oh>=L.oh&&c.poh>=L.poh&&(c.fin||0)>=FIN_MIN&&eph>=EPH_MIN)return L;
+    if(c.oh>=L.oh&&c.poh>=L.poh&&(c.fin||0)>=FIN_MIN&&(state.month>=DEC2_FROM?Math.round(eph*100)/100:eph)>=EPH_MIN)return L;
   }
   return{lvl:'none',gar:0};
 }
@@ -529,14 +533,17 @@ async function load(month){
     state.daily=state.dailyAll.filter(r=>r.d>=start&&r.d<=end);
     const RANKS={'2.5':5,'2':4,'1.5':3,'1':2,'branding':1,'none':0};
     const useCon=month>=CONTRACT_FIN_FROM;
+    const rr=v=>v==null?null:(month>=DEC2_FROM?Math.round(v*100)/100:Math.round(v*10)/10);
     state.cars=cars.map(c=>{
-      const o={car_id:c.car_id,cid:c.cid,reg:c.reg,company:c.company,oh:N(c.oh)||0,poh:N(c.poh)||0,fin:useCon?N(c.fin_con):N(c.fin_leg),acc:N(c.acc),earn:N(c.earn)||0,rides:N(c.rides)||0,branding:c.branding==1||c.branding=='1'};
+      const o={car_id:c.car_id,cid:c.cid,reg:c.reg,company:c.company,oh:N(c.oh)||0,poh:N(c.poh)||0,fin:rr(useCon?N(c.fin_con):N(c.fin_leg)),acc:rr(N(c.acc)),earn:N(c.earn)||0,rides:N(c.rides)||0,branding:c.branding==1||c.branding=='1'};
       const L=carLevel(o);o.lvl=L.lvl;o.gar=L.gar;o.comp=Math.max(0,L.gar-o.earn);o.eph=o.oh>0?o.earn/o.oh:null;
       o.lvlRank=RANKS[o.lvl];
+      const j=month==='2026-07'?JULY_ADJ[c.reg]:null;
+      if(j){o.lvl=j.lvl;o.gar=j.gar;o.comp=j.comp;o.adj=true;o.lvlRank=RANKS[j.lvl];}
       return o;
     });
     const cmap={};state.cars.forEach(c=>{cmap[c.cid]=c.company||String(c.cid);});
-    state.drivers=drv.map(d=>({id:d.driver_id,name:d.name||('Driver '+d.driver_id),cid:d.cid,flota:cmap[d.cid]||String(d.cid),oh:N(d.oh),poh:N(d.poh),ppeak:N(d.ppeak),util:N(d.util),pm30:N(d.pm30),pair:N(d.pair),eph:N(d.eph),earn:N(d.earn),fin:useCon?N(d.fin_con):N(d.fin_leg),acc:N(d.acc),nAcc:N(d.n_acc)||0,nNr:N(d.n_nr)||0,nRj:N(d.n_rj)||0,nCa:N(d.n_ca)||0,nFin:N(d.n_fin)||0,ofr:(N(d.n_acc)||0)+(N(d.n_nr)||0)+(N(d.n_rj)||0),perdidos:(N(d.n_nr)||0)+(N(d.n_rj)||0)+(N(d.n_ca)||0)}));
+    state.drivers=drv.map(d=>({id:d.driver_id,name:d.name||('Driver '+d.driver_id),cid:d.cid,flota:cmap[d.cid]||String(d.cid),oh:N(d.oh),poh:N(d.poh),ppeak:N(d.ppeak),util:N(d.util),pm30:N(d.pm30),pair:N(d.pair),eph:N(d.eph),earn:N(d.earn),fin:rr(useCon?N(d.fin_con):N(d.fin_leg)),acc:rr(N(d.acc)),nAcc:N(d.n_acc)||0,nNr:N(d.n_nr)||0,nRj:N(d.n_rj)||0,nCa:N(d.n_ca)||0,nFin:N(d.n_fin)||0,ofr:(N(d.n_acc)||0)+(N(d.n_nr)||0)+(N(d.n_rj)||0),perdidos:(N(d.n_nr)||0)+(N(d.n_rj)||0)+(N(d.n_ca)||0)}));
     state.ohTot=state.daily.reduce((s,r)=>s+(r.oh||0),0);
     state.pohTot=state.daily.reduce((s,r)=>s+(r.poh||0),0);
     state.busyTot=state.daily.reduce((s,r)=>s+(r.busy||0),0);
@@ -705,7 +712,7 @@ function renderCars(){
   let rows=state.cars.filter(c=>(lv==='all'||c.lvl===lv)&&(!q||String(c.reg||'').toLowerCase().includes(q.replace(/-/g,''))||String(c.company||'').toLowerCase().includes(q)||String(c.car_id).includes(q)));
   const s=state.sort.tCars||{k:'lvlRank',d:-1};rows=sortBy(rows,s.k,s.d);
   state.lastCars=rows;
-  document.querySelector('#tCars tbody').innerHTML=rows.map(c=>`<tr><td>${fmtReg(c.reg)||'—'}</td><td>${c.car_id}</td><td>${c.company||c.cid}</td><td class="r">${fmt(c.oh,2)}</td><td class="r">${fmt(c.poh,2)}</td><td class="r">${c.fin!=null?fmt(c.fin,2)+'%':'—'}</td><td class="r">${fmt(c.eph,2)}</td><td class="r">${eur(c.earn,2)}</td><td>${lvlChip(c.lvl)}</td><td class="r">${c.gar?eur(c.gar,2):'—'}</td><td class="r">${c.comp>0&&c.gar?'<b style="color:var(--green)">'+eur(c.comp,2)+'</b>':'—'}</td></tr>`).join('')||'<tr><td colspan="11" class="loading">Sin datos</td></tr>';
+  document.querySelector('#tCars tbody').innerHTML=rows.map(c=>`<tr><td>${fmtReg(c.reg)||'—'}</td><td>${c.car_id}</td><td>${c.company||c.cid}</td><td class="r">${fmt(c.oh,2)}</td><td class="r">${fmt(c.poh,2)}</td><td class="r">${c.fin!=null?fmt(c.fin,2)+'%':'—'}</td><td class="r">${fmt(c.eph,2)}</td><td class="r">${eur(c.earn,2)}</td><td>${lvlChip(c.lvl)}</td><td class="r">${c.gar?eur(c.gar,2):'—'}</td><td class="r">${c.comp>0&&c.gar?'<b style="color:var(--green)">'+eur(c.comp,2)+'</b>':'—'}${c.adj?'<span title="Excepción acordada en la liquidación de julio 2026" style="color:var(--green);font-weight:700"> *</span>':''}</td></tr>`).join('')||'<tr><td colspan="11" class="loading">Sin datos</td></tr>';
 }
 
 const CANC_COLS=[{k:'id',t:'Driver ID'},{k:'name',t:'Nombre'},{k:'flota',t:'Flota'},{k:'ofr',t:'Ofrecidos',r:1},{k:'nNr',t:'Sin responder',r:1,h:1,inv:1},{k:'nRj',t:'Rechazados',r:1,h:1,inv:1},{k:'nCa',t:'Cancel. tras aceptar',r:1,h:1,inv:1},{k:'perdidos',t:'Total perdidos',r:1,h:1,inv:1},{k:'acc',t:'Tasa Acept.',r:1,h:1},{k:'fin',t:'Tasa Fin.',r:1,h:1,abs:[60,70,80,90]}];
@@ -728,6 +735,7 @@ function renderCos(){
   let rows=Object.values(m).map(o=>({...o,pct:tot?o.comp/tot*100:0}));
   headRow('tCos',CO_COLS,rows,renderCos);
   const s=state.sort.tCos||{k:'comp',d:-1};rows=sortBy(rows,s.k,s.d);
+  if($('cosNote'))$('cosNote').style.display=state.cars.some(c=>c.adj)?'block':'none';
   document.querySelector('#tCos tbody').innerHTML=rows.map(o=>`<tr><td>${o.company||o.cid}</td><td>${o.cid}</td><td class="r">${o.cars}</td><td class="r">${o.lvlCars||'—'}</td><td class="r">${eur(o.earn,2)}</td><td class="r">${o.comp>0?'<b style="color:var(--green)">'+eur(o.comp,2)+'</b>':'—'}</td><td class="r">${o.comp>0?fmt(o.pct,2)+'%':'—'}</td></tr>`).join('');
 }
 
