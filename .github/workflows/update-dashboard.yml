@@ -1,8 +1,10 @@
 name: Actualizar dashboard flotas
 on:
   schedule:
-    - cron: '0 6 * * *'    # cada día a las 8:00 Madrid en verano (6:00 UTC)
-  workflow_dispatch:        # botón manual "Run workflow"
+    - cron: '17 6 * * *'
+    - cron: '52 6 * * *'
+    - cron: '17 8 * * *'
+  workflow_dispatch:
 permissions:
   contents: write
 jobs:
@@ -19,7 +21,7 @@ jobs:
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
           DATABRICKS_WAREHOUSE_ID: ${{ secrets.DATABRICKS_WAREHOUSE_ID }}
           SHEET_CSV_URL: ${{ secrets.SHEET_CSV_URL }}
-        run: node build.js
+        run: node build.js || (echo "Reintentando en 2 min..." && sleep 120 && node build.js)
       - name: Publicar si hay cambios
         run: |
           git config user.name "dashboard-bot"
