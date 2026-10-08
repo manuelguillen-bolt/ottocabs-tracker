@@ -99,10 +99,28 @@ async function sql(q){
     ]);
     BAKED[m]=[kpi,dg,doh,cars,drv,[],[]];
     console.log(`  kpi=${kpi.length} daily=${dg.length}/${doh.length} coches=${cars.length} conductores=${drv.length}`);
+    // Guardia de frescura: el ultimo mes debe traer el dia de ayer ya consolidado.
+    // Si el ETL de Databricks aun no ha cargado ayer, abortamos SIN publicar para que el
+    // siguiente intento programado lo recoja (evita publicar un dia a medias).
+    if(m===months[months.length-1]){
+      const serie=doh.filter(r=>r.d>=start&&r.d<=end).map(r=>({d:r.d,oh:parseFloat(r.oh)||0}));
+      const ayer=serie.find(r=>r.d===yesterday);
+      const ref=serie.filter(r=>r.d<yesterday).slice(-7).map(r=>r.oh).sort((a,b)=>a-b);
+      const mediana=ref.length?ref[Math.floor(ref.length/2)]:0;
+      if(!ayer||ayer.oh<=0){
+        console.error(`Los datos de ${yesterday} todavia no estan en Databricks. No se publica; se reintentara en la siguiente ejecucion.`);
+        process.exit(78);
+      }
+      if(mediana>0&&ayer.oh<mediana*0.6){
+        console.error(`Los datos de ${yesterday} parecen incompletos (${ayer.oh.toFixed(0)} OH frente a una mediana de ${mediana.toFixed(0)}). No se publica; se reintentara.`);
+        process.exit(78);
+      }
+      console.log(`  frescura OK: ${yesterday} con ${ayer.oh.toFixed(0)} OH (mediana 7d ${mediana.toFixed(0)})`);
+    }
   }
   const cfg=`<script>window.BAKED=${JSON.stringify(BAKED)};window.BAKED_DATE=${JSON.stringify(yesterday)};</script>`;
   const out=tpl.replace('<!--BAKED_HERE-->',cfg);
   fs.mkdirSync('docs',{recursive:true});
   fs.writeFileSync('docs/index.html',out);
-  console.log('docs/index.html generado:',out.length,'bytes');
+  console.log('docs/index.html generado:',out.length,'bytes · datos al',yesterday,'· build',new Date().toISOString());
 })().catch(e=>{console.error(e);process.exit(1);});

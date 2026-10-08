@@ -151,7 +151,7 @@ th.r{text-align:right}
     </div>
     <div class="panel" id="p-cos">
       <table id="tCos"><thead></thead><tbody><tr><td class="loading" colspan="7">Cargando…</td></tr></tbody></table>
-      <div id="cosNote" style="display:none;font-size:11px;color:#667085;margin:6px 2px 0">Julio 2026 incluye las excepciones acordadas en la liquidación (coches marcados con * en Detalle por coche).</div>
+      <div id="cosNote" style="display:none;font-size:11px;color:#667085;margin:6px 2px 0">Los coches marcados con * llevan ajustes acordados en la reunión de cierre de mes; sus datos operativos siguen siendo los reales.</div>
     </div>
     <div class="panel" id="p-drv">
       <div class="riskcards" id="drvRisk"></div>
@@ -270,6 +270,19 @@ const LEVELS=[{lvl:'2.5',oh:440,poh:264,gar:11000},{lvl:'2',oh:400,poh:240,gar:1
 // Tasa de finalización: fórmula del contrato (aceptación − cancelación del driver) desde julio 2026; antes, fórmula legada
 const CONTRACT_FIN_FROM='2026-07';
 // Excepciones acordadas SOLO para la liquidacion de julio 2026 (importes fijos pactados):
+// Ajustes acordados en las reuniones de cierre de mes. base = compensacion ya pagada antes del ajuste.
+const MONTH_ADJ={
+ '2026-09':{
+ '7819MNV':{lvl:'1.5',gar:6500,comp:1447.10,base:0,note:'OH asumidas 261 (real 259,55)'},
+ '9842LVB':{lvl:'1.5',gar:6500,comp:1846.36,base:346.36,note:'OH asumidas 260,05 (real 259,45)'},
+ '9433LBZ':{lvl:'1.5',gar:6500,comp:697.47,base:0,note:'OH pico asumidas 156,09 (real 154,49)'}},
+ '2026-08':{
+ '8463LRC':{lvl:'2',gar:10000,comp:3189.76,base:0,note:'Averia: recibe las metricas de Rigoberto Cataldo y Andres Garcia hechas en el 8446-LRC'},
+ '8446LRC':{lvl:'1.5',gar:6500,comp:1586.50,base:0,note:'Cede a Rigoberto y Andres al 8463-LRC y recibe las metricas de Khalid El Gharroubi hechas en el 8439-LRC'},
+ '8439LRC':{lvl:'1.5',gar:6500,comp:1730.15,base:623.15,note:'Se descuentan las metricas de Khalid El Gharroubi, traspasadas al 8446-LRC'},
+ '8490LRC':{lvl:'1.5',gar:6500,comp:1248.31,base:0,note:'Tasa de finalizacion asumida al 80% (real 79,50%)'},
+ '5888LXW':{lvl:'1.5',gar:6500,comp:887.90,base:0,note:'Tasa de finalizacion asumida al 80% (real 79,53%)'},
+ '7332NKN':{lvl:'2',gar:10000,comp:2716.68,base:0,note:'OH asumidas 401 y OH pico 275 (real 395,12 / 272,96)'}}};
 const JULY_ADJ={'8431LRC':{lvl:'2.5',gar:11000,comp:3960.20},'8439LRC':{lvl:'1.5',gar:6500,comp:1123.21},'2609LGB':{lvl:'1.5',gar:6500,comp:715.85},'9852LVB':{lvl:'2',gar:10000,comp:2809.15},'7367MFF':{lvl:'2',gar:10000,comp:2090.99},'9992MYY':{lvl:'1.5',gar:6500,comp:1151.22},'6522NKB':{lvl:'1.5',gar:6500,comp:0},'1020MZZ':{lvl:'1.5',gar:6500,comp:1223.90},'6435MWW':{lvl:'1.5',gar:6500,comp:995.37},'8446LRC':{lvl:'1',gar:5000,comp:1622.75},'8464LRC':{lvl:'1',gar:5000,comp:1173.65}};
 const DEC2_FROM='2026-08'; // desde agosto-2026: FR/aceptacion/EPH se muestran y evaluan con 2 decimales; antes, FR redondeada a 1 decimal (criterio liquidacion julio)
 const FIN_MIN=80, EPH_MIN=15, FLEET_OH_TARGET=30000, FLEET_BONUS=0, FLEET_KICKBACK_PCT=0;
@@ -538,8 +551,8 @@ async function load(month){
       const o={car_id:c.car_id,cid:c.cid,reg:c.reg,company:c.company,oh:N(c.oh)||0,poh:N(c.poh)||0,fin:rr(useCon?N(c.fin_con):N(c.fin_leg)),acc:rr(N(c.acc)),earn:N(c.earn)||0,rides:N(c.rides)||0,branding:c.branding==1||c.branding=='1'};
       const L=carLevel(o);o.lvl=L.lvl;o.gar=L.gar;o.comp=Math.max(0,L.gar-o.earn);o.eph=o.oh>0?o.earn/o.oh:null;
       o.lvlRank=RANKS[o.lvl];
-      const j=month==='2026-07'?JULY_ADJ[c.reg]:null;
-      if(j){o.lvl=j.lvl;o.gar=j.gar;o.comp=j.comp;o.adj=true;o.lvlRank=RANKS[j.lvl];}
+      const j=(month==='2026-07'?JULY_ADJ[c.reg]:null)||((MONTH_ADJ[month]||{})[c.reg]||null);
+      if(j){o.lvl=j.lvl;o.gar=j.gar;o.comp=j.comp;o.adj=true;o.lvlRank=RANKS[j.lvl];o.adjNote=j.note||'Ajuste acordado en la reunion de cierre';}
       return o;
     });
     const cmap={};state.cars.forEach(c=>{cmap[c.cid]=c.company||String(c.cid);});
@@ -616,14 +629,15 @@ function render(){
   const compTot=state.cars.reduce((s,c)=>s+(c.comp>0&&c.lvl!=='none'&&c.lvl!=='branding'?c.comp:0),0);
   const nCompCars=state.cars.filter(c=>c.comp>0&&c.lvl!=='none'&&c.lvl!=='branding').length;
   const hit=oh>=FLEET_OH_TARGET;
-  const bonus=hit?FLEET_BONUS:gmv*FLEET_KICKBACK_PCT;
+  const gmvBruto=N(k.gmv_bruto)||0;
+  const bonus=hit?FLEET_BONUS:gmvBruto*FLEET_KICKBACK_PCT;
   $('kComp').textContent=eur(compTot,2);
   $('kCompSub').textContent=nCompCars+' coches con compensación'+(prog?' · provisional':'');
   $('kBonus').textContent=eur(bonus,2);
   $('kBonusSub').textContent=hit?'✓ objetivo de 30.000 OH alcanzado':(prog?'mes en curso':'objetivo de 30.000 OH no alcanzado');
   {const e=$('kTotal');if(e)e.textContent=eur(compTot+bonus,2);}
   {const e=$('kTotalSub');if(e)e.textContent=prog?'estimado a hoy':'';}
-  const bruto=N(k.gmv_bruto)||0;
+  const bruto=gmvBruto;
   {const e=$('kSsp');if(e)e.textContent=bruto?fmt((compTot+bonus)/bruto*100,2)+'%':'—';}
   const dist={};state.cars.forEach(c=>{if(c.lvl!=='none')dist[c.lvl]=(dist[c.lvl]||0)+1;});
   {const LC={'2.5':'#0C2C1C','2':'#2A9C64','1.5':'#6FBF92','1':'#A9DFBF','branding':'#5c6b62'};
@@ -712,7 +726,7 @@ function renderCars(){
   let rows=state.cars.filter(c=>(lv==='all'||c.lvl===lv)&&(!q||String(c.reg||'').toLowerCase().includes(q.replace(/-/g,''))||String(c.company||'').toLowerCase().includes(q)||String(c.car_id).includes(q)));
   const s=state.sort.tCars||{k:'lvlRank',d:-1};rows=sortBy(rows,s.k,s.d);
   state.lastCars=rows;
-  document.querySelector('#tCars tbody').innerHTML=rows.map(c=>`<tr><td>${fmtReg(c.reg)||'—'}</td><td>${c.car_id}</td><td>${c.company||c.cid}</td><td class="r">${fmt(c.oh,2)}</td><td class="r">${fmt(c.poh,2)}</td><td class="r">${c.fin!=null?fmt(c.fin,2)+'%':'—'}</td><td class="r">${fmt(c.eph,2)}</td><td class="r">${eur(c.earn,2)}</td><td>${lvlChip(c.lvl)}</td><td class="r">${c.gar?eur(c.gar,2):'—'}</td><td class="r">${c.comp>0&&c.gar?'<b style="color:var(--green)">'+eur(c.comp,2)+'</b>':'—'}${c.adj?'<span title="Excepción acordada en la liquidación de julio 2026" style="color:var(--green);font-weight:700"> *</span>':''}</td></tr>`).join('')||'<tr><td colspan="11" class="loading">Sin datos</td></tr>';
+  document.querySelector('#tCars tbody').innerHTML=rows.map(c=>`<tr><td>${fmtReg(c.reg)||'—'}</td><td>${c.car_id}</td><td>${c.company||c.cid}</td><td class="r">${fmt(c.oh,2)}</td><td class="r">${fmt(c.poh,2)}</td><td class="r">${c.fin!=null?fmt(c.fin,2)+'%':'—'}</td><td class="r">${fmt(c.eph,2)}</td><td class="r">${eur(c.earn,2)}</td><td>${lvlChip(c.lvl)}</td><td class="r">${c.gar?eur(c.gar,2):'—'}</td><td class="r">${c.comp>0&&c.gar?'<b style="color:var(--green)">'+eur(c.comp,2)+'</b>':'—'}${c.adj?'<span title="'+(c.adjNote||'Ajuste acordado en la reunión de cierre')+'" style="color:var(--green);font-weight:700"> *</span>':''}</td></tr>`).join('')||'<tr><td colspan="11" class="loading">Sin datos</td></tr>';
 }
 
 const CANC_COLS=[{k:'id',t:'Driver ID'},{k:'name',t:'Nombre'},{k:'flota',t:'Flota'},{k:'ofr',t:'Ofrecidos',r:1},{k:'nNr',t:'Sin responder',r:1,h:1,inv:1},{k:'nRj',t:'Rechazados',r:1,h:1,inv:1},{k:'nCa',t:'Cancel. tras aceptar',r:1,h:1,inv:1},{k:'perdidos',t:'Total perdidos',r:1,h:1,inv:1},{k:'acc',t:'Tasa Acept.',r:1,h:1},{k:'fin',t:'Tasa Fin.',r:1,h:1,abs:[60,70,80,90]}];

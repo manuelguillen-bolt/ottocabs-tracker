@@ -1,0 +1,96 @@
+name: Actualizar dashboard flotas
+on:
+  schedule:
+    # Horas UTC. Espana = UTC+2 en verano / UTC+1 en invierno.
+    # Ventana de la manana cada 15 min: cubre de 6:00 a 10:00 hora espanola en ambos horarios.
+    # Si Databricks aun no tiene cerrado el dia de ayer, build.js aborta sin publicar y lo recoge
+    # el intento siguiente, asi que el dashboard queda listo en cuanto el dato existe.
+    - cron: '*/15 4-8 * * *'
+    # Resto del dia: refresco cada hora hasta las 17:00 hora espanola.
+    - cron: '10 9-16 * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+  issues: write
+concurrency:
+  group: dashboard-build
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Comprobar si ya esta publicado el dia de ayer
+        id: check
+        run: |
+          AYER=$(TZ=Europe/Madrid date -d 'yesterday' +%F)
+          echo "ayer=$AYER" >> $GITHUB_OUTPUT
+          if grep -q "window.BAKED_DATE=\"$AYER\"" docs/index.html 2>/dev/null; then
+            echo "fresco=si" >> $GITHUB_OUTPUT
+            echo "El dashboard ya tiene los datos del $AYER publicados."
+          else
+            echo "fresco=no" >> $GITHUB_OUTPUT
+            echo "Pendiente de publicar los datos del $AYER."
+          fi
+
+      # Por la manana solo se construye si falta el dato de ayer; a partir de las 9 UTC se
+      # reconstruye igualmente una vez por hora para recoger la maduracion del ETL.
+      - name: Construir dashboard con datos frescos
+        id: build
+        if: steps.check.outputs.fresco == 'no' || github.event.schedule == '10 9-16 * * *' || github.event_name == 'workflow_dispatch'
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+          DATABRICKS_WAREHOUSE_ID: ${{ secrets.DATABRICKS_WAREHOUSE_ID }}
+          SHEET_CSV_URL: ${{ secrets.SHEET_CSV_URL }}
+        run: |
+          set +e
+          node build.js
+          CODE=$?
+          if [ $CODE -eq 78 ]; then
+            echo "datos_no_listos=si" >> $GITHUB_OUTPUT
+            echo "::notice::Los datos de ayer aun no estan completos en Databricks. Se reintentara en la siguiente ejecucion."
+            exit 0
+          fi
+          if [ $CODE -ne 0 ]; then
+            echo "Primer intento fallido (codigo $CODE), reintentando en 2 min..."
+            sleep 120
+            node build.js
+            CODE=$?
+            if [ $CODE -eq 78 ]; then echo "datos_no_listos=si" >> $GITHUB_OUTPUT; exit 0; fi
+            exit $CODE
+          fi
+
+      - name: Publicar si hay cambios
+        if: steps.build.outputs.datos_no_listos != 'si'
+        run: |
+          git config user.name "dashboard-bot"
+          git config user.email "actions@github.com"
+          git add docs/index.html
+          if git diff --cached --quiet; then
+            echo "Sin cambios que publicar."
+          else
+            git commit -m "Datos al ${{ steps.check.outputs.ayer }} (build $(TZ=Europe/Madrid date +'%H:%M') Madrid)"
+            git push
+            echo "### Dashboard publicado con datos al ${{ steps.check.outputs.ayer }} a las $(TZ=Europe/Madrid date +'%H:%M') (Madrid)" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Avisar si ha fallado
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = 'El dashboard de flotas no se ha actualizado';
+            const {data} = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo, state: 'open', labels: 'build-failure'
+            });
+            const body = `La ejecucion [#${context.runNumber}](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}) ha fallado.\n\nCausas habituales: token de Databricks caducado, Google Sheet sin permisos de lectura, o lista de flotas vacia (el build aborta a proposito para no publicar datos erroneos).`;
+            if (data.length) {
+              await github.rest.issues.createComment({owner: context.repo.owner, repo: context.repo.repo, issue_number: data[0].number, body});
+            } else {
+              await github.rest.issues.create({owner: context.repo.owner, repo: context.repo.repo, title, body, labels: ['build-failure']});
+            }
