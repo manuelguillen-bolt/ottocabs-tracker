@@ -1,36 +1,109 @@
 name: Actualizar dashboard flotas
+
+# El planificador de GitHub es "best effort": en este repo las ejecuciones de la manana
+# se estaban descartando y las demas llegaban con 1-3 h de retraso. Por eso ya no dependemos
+# de que el cron sea puntual: se dispara de madrugada (franja de baja carga, donde el retraso
+# es minimo) y el propio job espera, comprobando cada 10 minutos, hasta que Databricks tiene
+# cerrado el dia anterior. En cuanto el dato existe, publica. Como muy tarde espera hasta las
+# 7:00 de Madrid; a partir de esa hora cada ejecucion horaria es un intento unico.
 on:
   schedule:
-    - cron: '25 5-16 * * *'
-    - cron: '50 5,6 * * *'
+    # Disparos de madrugada (franja de baja carga): el job espera hasta que el dato exista,
+    # con las 7:00 de Madrid como limite, de modo que a esa hora ya este publicado.
+    - cron: '30 0 * * *'     # 02:30 Madrid en verano / 01:30 en invierno
+    - cron: '30 1 * * *'     # 03:30 / 02:30
+    - cron: '30 2 * * *'     # 04:30 / 03:30
+    - cron: '30 3 * * *'     # 05:30 / 04:30
+    - cron: '30 4 * * *'     # 06:30 / 05:30  ultimo refuerzo antes de las 7:00
+    # Refresco cada hora durante el dia, cubriendo hasta las 20:00 de Madrid en ambos horarios.
+    - cron: '5 5-19 * * *'
   workflow_dispatch:
+  repository_dispatch:
+    types: [publicar]
+
 permissions:
   contents: write
   issues: write
 concurrency:
   group: dashboard-build
   cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 350
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Construir dashboard con datos frescos
+
+      - name: Estado actual
+        id: check
+        run: |
+          AYER=$(TZ=Europe/Madrid date -d 'yesterday' +%F)
+          echo "ayer=$AYER" >> $GITHUB_OUTPUT
+          echo "Hora de inicio: $(TZ=Europe/Madrid date +'%F %H:%M') Madrid · dia a publicar: $AYER"
+          if grep -q "window.BAKED_DATE=\"$AYER\"" docs/index.html 2>/dev/null; then
+            echo "fresco=si" >> $GITHUB_OUTPUT
+            echo "Ya publicado el $AYER: esta ejecucion solo refrescara si hay maduracion de datos."
+          else
+            echo "fresco=no" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Construir y esperar al dato de ayer
+        id: build
         env:
           DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
           DATABRICKS_WAREHOUSE_ID: ${{ secrets.DATABRICKS_WAREHOUSE_ID }}
           SHEET_CSV_URL: ${{ secrets.SHEET_CSV_URL }}
-        run: node build.js || (echo "Primer intento fallido, reintentando en 2 min..." && sleep 120 && node build.js)
+        run: |
+          set +e
+          # Solo se espera si aun no esta publicado el dia de ayer y estamos antes de las 8:30 Madrid.
+          LIMITE=$(TZ=Europe/Madrid date -d 'today 07:00' +%s)
+          INTENTO=0
+          while true; do
+            INTENTO=$((INTENTO+1))
+            echo "--- Intento $INTENTO · $(TZ=Europe/Madrid date +'%H:%M') Madrid ---"
+            node build.js
+            CODE=$?
+            if [ $CODE -eq 0 ]; then
+              echo "listo=si" >> $GITHUB_OUTPUT
+              break
+            fi
+            if [ $CODE -ne 78 ]; then
+              echo "Error real del build (codigo $CODE). Reintento en 2 minutos."
+              sleep 120
+              node build.js || exit 1
+              echo "listo=si" >> $GITHUB_OUTPUT
+              break
+            fi
+            # codigo 78 = el dia de ayer aun no esta consolidado en Databricks
+            AHORA=$(date +%s)
+            if [ "${{ steps.check.outputs.fresco }}" = "si" ] || [ $AHORA -ge $LIMITE ]; then
+              echo "::notice::Los datos de ${{ steps.check.outputs.ayer }} aun no estan completos. Se recogeran en la siguiente ejecucion."
+              echo "listo=no" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+            echo "Datos aun no disponibles. Nueva comprobacion en 10 minutos (espera hasta las 07:00 Madrid)."
+            sleep 600
+          done
+
       - name: Publicar si hay cambios
+        if: steps.build.outputs.listo == 'si'
         run: |
           git config user.name "dashboard-bot"
           git config user.email "actions@github.com"
           git add docs/index.html
-          git diff --cached --quiet || (git commit -m "Datos al $(date -u +%F) $(date -u +%H:%M) UTC" && git push)
+          if git diff --cached --quiet; then
+            echo "Sin cambios que publicar."
+          else
+            git commit -m "Datos al ${{ steps.check.outputs.ayer }} (publicado $(TZ=Europe/Madrid date +'%H:%M') Madrid)"
+            git push
+            echo "### Publicado: datos al ${{ steps.check.outputs.ayer }} a las $(TZ=Europe/Madrid date +'%H:%M') hora de Madrid" >> $GITHUB_STEP_SUMMARY
+          fi
+
       - name: Avisar si ha fallado
         if: failure()
         uses: actions/github-script@v7
