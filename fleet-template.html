@@ -174,7 +174,7 @@ th.r{text-align:right}
         </tbody></table>
         <h3>Reglas</h3>
         <ul>
-          <li>Ingresos netos por coche = ride price del mes − 25% comisión Bolt (GMV bruto × 0,75).</li>
+          <li>Ingresos netos por coche = los que muestra el portal de flotas (vista vehículos): tarifas, peajes, tasa de reserva en efectivo, tasas de cancelación y propinas, menos comisión y tasas de servicio. Hasta septiembre 2026 se usó GMV bruto × 0,75.</li>
           <li>Si el coche cumple un nivel a final de mes: compensación = máx(0, garantizado − ingresos netos). Si facturó más que el garantizado, no se compensa. La compensación se paga a la flota (company ID).</li>
           <li id="ruleObjetivo">Objetivo de flota: alcanzar 30.000 OH en el mes entre todas las company IDs (los coches en branding cuentan para este total).</li>
           <li>Los coches enrolados en campañas de branding no cuentan para los garantizados, pero sí para las OH totales de la flota.</li>
@@ -184,7 +184,7 @@ th.r{text-align:right}
         <h3>Metodología de cálculo</h3>
         <ul>
           <li><b>Flotas incluidas</b>: se descarga el Google Sheet "Madrid Grouping" al abrir y se usan los Company IDs con FO = OTTOCABS SL.</li>
-          <li><b>Facturación (GMV) bruta</b>: suma de gmv_eur (etl_partner_data) del mes. <b>Neta</b>: bruta × 0,75 (comisión Bolt 25% fija del acuerdo). El portal de flotas aplica la comisión real de cada viaje (±0,3%).</li>
+          <li><b>Facturación</b> (desde octubre 2026, misma lógica que el portal de flotas): se toma del libro de saldos de la flota (<code>invoicing_balance_balance_entry</code>). <b>Bruta</b> = tarifas + peajes + tasa de reserva en efectivo + tasas de cancelación + propinas. <b>Neta de flota</b> = bruta − comisión − tasas de servicio − reembolsos a pasajeros. <b>Neta por coche y conductor</b> = igual pero sin los reembolsos a pasajeros, que no son imputables a un coche (es la vista vehículos del portal). Los reembolsos de gastos quedan fuera en ambos casos. Hasta septiembre 2026: gmv_eur de etl_partner_data y neta = bruta × 0,75.</li>
           <li><b>Online Hours (OH)</b>: has_order_seconds + waiting_orders_seconds de <code>driver_online_hours_daily</code> (la tabla transaccional del portal de flotas, día local ya resuelto) ÷ 3600. Misma fuente para flota, coche y conductor. Cuadra al minuto con el "Tiempo de conexión" del portal.</li>
           <li><b>OH Pico</b>: desglose horario (per_hour_breakdown) de la misma tabla, filtrado por la matriz del acuerdo (Lun–Mié 7-9 y 17-20 · Jue 7-9 y 17-23 · Vie 0-1, 7-9 y 16-23 · Sáb y Dom completos, hora local).</li>
           <li><b>Utilización</b>: has_order_seconds ÷ (has_order_seconds + waiting_orders_seconds) — % de horas online con viaje. Nunca puede superar 100%.</li>
@@ -269,6 +269,7 @@ const PEAK_HOURS={1:[7,8,9,17,18,19,20],2:[7,8,9,17,18,19,20],3:[7,8,9,17,18,19,
 const LEVELS=[{lvl:'2.5',oh:440,poh:264,gar:11000},{lvl:'2',oh:400,poh:240,gar:10000},{lvl:'1.5',oh:260,poh:156,gar:6500},{lvl:'1',oh:200,poh:120,gar:5000}];
 // Tasa de finalización: fórmula del contrato (aceptación − cancelación del driver) desde julio 2026; antes, fórmula legada
 const CONTRACT_FIN_FROM='2026-07';
+const PORTAL_FROM='2026-10'; // desde octubre 2026 la facturacion sale del libro de saldos (logica del portal de flotas)
 // Excepciones acordadas SOLO para la liquidacion de julio 2026 (importes fijos pactados):
 // Ajustes acordados en las reuniones de cierre de mes. base = compensacion ya pagada antes del ajuste.
 const MONTH_ADJ={
@@ -303,10 +304,10 @@ async function mcp(name,args){
 }
 async function runSQL(q){
   let j=await mcp(SQL_TOOL,{query:q});
-  const t0=Date.now();
+  const t0=Date.now();let esp=2500;
   while(j.status&&(j.status.state==='PENDING'||j.status.state==='RUNNING')){
-    if(Date.now()-t0>150000)throw new Error('Timeout de query (150s)');
-    await new Promise(r=>setTimeout(r,2500));
+    if(Date.now()-t0>180000)throw new Error('Timeout de query (180s)');
+    await new Promise(r=>setTimeout(r,esp));esp=Math.min(esp*1.4,9000);
     j=await mcp(POLL_TOOL,{statement_id:j.statement_id});
   }
   if(j.status&&j.status.state!=='SUCCEEDED')throw new Error('Query '+j.status.state+(j.status.error?': '+JSON.stringify(j.status.error).slice(0,300):''));
@@ -367,6 +368,60 @@ function inProgress(m){
   return m===`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
 }
 
+// ---- Ingresos con la logica del portal de flotas (libro de saldos) ----
+// Desde octubre 2026 la facturacion sale del libro de saldos de la flota, igual que el portal.
+// Tipos de ingreso de la vista vehiculos (sin reembolsos de gastos ni reembolsos a pasajeros).
+const LED_INC="'ride_hailing-ride_fee','ride_hailing-toll_road','ride_hailing-bolt_rider_booking_fee','ride_hailing-cancellation_fee','ride_hailing-tips'";
+const LED_COST="'ride_hailing-fee','ride_hailing-bolt_booking_fee_collection'";
+const LED_ALL=LED_INC+","+LED_COST+",'ride_hailing-refund'";
+// Los reembolsos de gastos (ride_hailing-compensation) quedan fuera: en esta flota son en su mayor
+// parte pagos nuestros del acuerdo, no facturacion de viajes.
+function ledF(s,e){return `SELECT b.external_type t, b.external_id xid, b.amount, b.created
+ FROM main.ng_payout.invoicing_balance_balance_entry b
+ WHERE b.account_id IN (SELECT id FROM main.ng_payout.invoicing_balance_account
+   WHERE CAST(external_id AS BIGINT) IN (${OTTO}) AND type IN ('ride_hailing_fleet','ride_hailing_fleet_external'))
+  AND b.created_date BETWEEN CAST(date_sub('${s}',1) AS STRING) AND CAST(date_add('${e}',1) AS STRING)
+  AND DATE(CONVERT_TIMEZONE('Europe/Madrid',b.created)) BETWEEN '${s}' AND '${e}'
+  AND b.external_type IN (${LED_ALL})`;}
+// Totales de flota: bruto sin reembolsos de gastos; neto restando comision, tasas y reembolsos a pasajeros.
+function qLedTot(s,e){return `WITH f AS (${ledF(s,e)}) SELECT
+ ROUND(SUM(CASE WHEN t IN (${LED_INC}) THEN amount ELSE 0 END),2) bruto,
+ ROUND(SUM(amount),2) neto,
+ ROUND(SUM(CASE WHEN t='ride_hailing-refund' THEN amount ELSE 0 END),2) reemb FROM f`;}
+function qLedDay(s,e){return `WITH f AS (${ledF(s,e)}) SELECT CAST(DATE(CONVERT_TIMEZONE('Europe/Madrid',created)) AS STRING) d,
+ ROUND(SUM(CASE WHEN t IN (${LED_INC}) THEN amount ELSE 0 END),2) bruto, ROUND(SUM(amount),2) neto
+ FROM f GROUP BY 1 ORDER BY 1`;}
+// Reparto por coche y conductor: cada apunte de la flota tiene espejo en la cuenta del conductor,
+// y el coche sale de la transaccion de pricing mas cercana en el tiempo (ventana -5s/+120s).
+function qLed(s,e){return `WITH f AS (SELECT b.external_type t, b.external_id xid, b.amount, b.created
+ FROM main.ng_payout.invoicing_balance_balance_entry b
+ WHERE b.account_id IN (SELECT id FROM main.ng_payout.invoicing_balance_account
+   WHERE CAST(external_id AS BIGINT) IN (${OTTO}) AND type IN ('ride_hailing_fleet','ride_hailing_fleet_external'))
+  AND b.created_date BETWEEN CAST(date_sub('${s}',1) AS STRING) AND CAST(date_add('${e}',1) AS STRING)
+  AND DATE(CONVERT_TIMEZONE('Europe/Madrid',b.created)) BETWEEN '${s}' AND '${e}'
+  AND b.external_type IN (${LED_INC},${LED_COST})),
+da AS (SELECT id, CAST(external_id AS BIGINT) driver_id FROM main.ng_payout.invoicing_balance_account
+ WHERE type='ride_hailing_driver' AND CAST(external_id AS BIGINT) IN (
+  SELECT DISTINCT driver_id FROM main.ng_public.etl_partner_data WHERE company_id IN (${OTTO})
+   AND created_date_local BETWEEN date_sub('${s}',1) AND date_add('${e}',1))),
+de AS (SELECT b.external_id xid, MAX(da.driver_id) driver_id FROM main.ng_payout.invoicing_balance_balance_entry b
+ JOIN da ON da.id=b.account_id WHERE b.created_date BETWEEN CAST(date_sub('${s}',1) AS STRING) AND CAST(date_add('${e}',1) AS STRING) GROUP BY 1),
+p AS (SELECT p0.driver_id, p0.action_timestamp ts, CAST(od.property_value AS BIGINT) car_id
+ FROM main.ng_public.ride_hailing_invoicing_order_pricing_transaction p0
+ JOIN main.ng_public.ride_hailing_invoicing_order_details od ON od.order_pricing_transaction_id=p0.id AND od.property_key='car_id'
+ WHERE p0.action_timestamp_date BETWEEN date_sub('${s}',1) AND date_add('${e}',1) AND p0.company_id IN (${OTTO})),
+j AS (SELECT f.xid, f.t, f.amount, f.created, de.driver_id, p.car_id,
+  ROW_NUMBER() OVER (PARTITION BY f.xid ORDER BY ABS(unix_timestamp(f.created)-unix_timestamp(p.ts))) rn
+ FROM f LEFT JOIN de ON de.xid=f.xid
+ LEFT JOIN p ON p.driver_id=de.driver_id AND f.created BETWEEN p.ts - INTERVAL 5 SECONDS AND p.ts + INTERVAL 120 SECONDS),
+jj AS (SELECT t, amount, driver_id,
+  CASE WHEN car_id IS NOT NULL THEN car_id WHEN t='ride_hailing-tips'
+   THEN COALESCE(LAST_VALUE(car_id, true) OVER (PARTITION BY driver_id ORDER BY created ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING),
+                 FIRST_VALUE(car_id, true) OVER (PARTITION BY driver_id ORDER BY created ROWS BETWEEN 1 FOLLOWING AND UNBOUNDED FOLLOWING)) END car_id
+ FROM j WHERE rn=1),
+b AS (SELECT * FROM jj WHERE car_id IS NULL OR car_id IN (SELECT id FROM main.ng_public.fleet_car WHERE company_id IN (${OTTO})))
+SELECT 'c' k, CAST(car_id AS STRING) id, ROUND(SUM(amount),2) neto FROM b WHERE car_id IS NOT NULL GROUP BY car_id
+UNION ALL SELECT 'r', CAST(driver_id AS STRING), ROUND(SUM(amount),2) FROM b WHERE driver_id IS NOT NULL GROUP BY driver_id`;}
 function qKpi(s,e){return `SELECT ROUND(SUM(CAST(gmv_eur AS DOUBLE))*0.75,2) gmv_neto, ROUND(SUM(CAST(gmv_eur AS DOUBLE)),2) gmv_bruto, SUM(finished_rides) rides, COUNT(DISTINCT driver_car_id) cars, COUNT(DISTINCT driver_id) drivers FROM main.ng_public.etl_partner_data WHERE company_id IN (${OTTO}) AND created_date_local BETWEEN '${s}' AND '${e}'`;}
 function qDailyGmv(s,e){return `SELECT CAST(created_date_local AS STRING) d, ROUND(SUM(CAST(gmv_eur AS DOUBLE))*0.75,2) gmv, SUM(finished_rides) rides, ROUND(SUM(finished_rides)*100.0/NULLIF(SUM(accepted_orders_tries)-SUM(client_cancelled_after_accepted_tries)-SUM(client_cancelled_after_arrived_tries)-SUM(client_cancelled_after_pickup_tries)-SUM(client_noshows_tries)-SUM(payment_booking_fails_tries),0),1) fin_leg, ROUND((SUM(accepted_orders_tries)-SUM(driver_rejection_after_acceptance_tries))*100.0/NULLIF(SUM(accepted_orders_tries)+SUM(driver_nonresponses_tries)+SUM(driver_rejection_before_acceptance_tries),0),1) fin_con FROM main.ng_public.etl_partner_data WHERE company_id IN (${OTTO}) AND created_date_local BETWEEN '${s}' AND '${e}' GROUP BY 1 ORDER BY 1`;}
 // Regiones (misma fuente que Looker admin_system_region): M-30 = 2185, Madrid Aeropuerto = 2188
@@ -531,24 +586,34 @@ async function load(month){
   const{start,end,fetchStart,fetchEnd}=monthDates(month);
   const pr=prevRange(month);
   try{
-    const [kpi,dg,doh,cars,drv,pkpi,poh_]=window.BAKED&&window.BAKED[month]
+    const usaPortal=month>=PORTAL_FROM;
+    const horneado=window.BAKED&&window.BAKED[month];
+    const [kpi,dg,doh,cars,drv,pkpi,poh_,ledTot,ledDay,led,pLedTot]=horneado
       ?window.BAKED[month]
-      :await Promise.all([
+      :(await Promise.all([
       runSQL(qKpi(start,end)),runSQL(qDailyGmv(fetchStart,fetchEnd)),runSQL(qDailyOh(fetchStart,fetchEnd)),
       runSQL(qCars(start,end)),runSQL(qDrv(start,end)),
       runSQL(qKpi(pr.start,pr.end)),runSQL(qOhTot(pr.start,pr.end))
-    ]);
-    if(month>='2026-07'){state.rawByMonth=state.rawByMonth||{};state.rawByMonth[month]=[kpi,dg,doh,cars,drv,[],[]];}
-    state.kpi=kpi[0]||{};
+    ])).concat([[],[],[],[]]);
+    if(month>='2026-07'){state.rawByMonth=state.rawByMonth||{};state.rawByMonth[month]=[kpi,dg,doh,cars,drv,[],[],ledTot||[],ledDay||[],led||[],pLedTot||[]];}
+    // Mapas del libro de saldos (solo cuando los datos vienen horneados; en vivo se aplican despues)
+    const ledCar={},ledDrv={};
+    (led||[]).forEach(r=>{(r.k==='c'?ledCar:ledDrv)[String(r.id)]=N(r.neto)||0;});
+    state.ledTot=(ledTot&&ledTot.length?ledTot[0]:null);
+    state.portal=usaPortal&&!!state.ledTot;
+    state.kpi={...(kpi[0]||{})};
+    if(state.portal){state.kpi.gmv_neto=N(state.ledTot.neto);state.kpi.gmv_bruto=N(state.ledTot.bruto);}
     state.prev={...(pkpi[0]||{}),...(poh_[0]||{})};
+    if(state.portal&&pLedTot&&pLedTot[0])state.prev.gmv_neto=N(pLedTot[0].neto);
     state.dailyAll=mergeDaily(dg,doh);
+    if(state.portal&&ledDay&&ledDay.length){const lm={};ledDay.forEach(r=>lm[r.d]=N(r.neto));state.dailyAll.forEach(r=>{if(lm[r.d]!=null)r.gmv=lm[r.d];});}
     state.dailyAll.forEach(r=>{r.fin=month>=CONTRACT_FIN_FROM?r.finCon:r.finLeg;});
     state.daily=state.dailyAll.filter(r=>r.d>=start&&r.d<=end);
     const RANKS={'2.5':5,'2':4,'1.5':3,'1':2,'branding':1,'none':0};
     const useCon=month>=CONTRACT_FIN_FROM;
     const rr=v=>v==null?null:(month>=DEC2_FROM?Math.round(v*100)/100:Math.round(v*10)/10);
     state.cars=cars.map(c=>{
-      const o={car_id:c.car_id,cid:c.cid,reg:c.reg,company:c.company,oh:N(c.oh)||0,poh:N(c.poh)||0,fin:rr(useCon?N(c.fin_con):N(c.fin_leg)),acc:rr(N(c.acc)),earn:N(c.earn)||0,rides:N(c.rides)||0,branding:c.branding==1||c.branding=='1'};
+      const o={car_id:c.car_id,cid:c.cid,reg:c.reg,company:c.company,oh:N(c.oh)||0,poh:N(c.poh)||0,fin:rr(useCon?N(c.fin_con):N(c.fin_leg)),acc:rr(N(c.acc)),earn:(state.portal&&ledCar[String(c.car_id)]!=null?ledCar[String(c.car_id)]:N(c.earn)||0),rides:N(c.rides)||0,branding:c.branding==1||c.branding=='1'};
       const L=carLevel(o);o.lvl=L.lvl;o.gar=L.gar;o.comp=Math.max(0,L.gar-o.earn);o.eph=o.oh>0?o.earn/o.oh:null;
       o.lvlRank=RANKS[o.lvl];
       const j=(month==='2026-07'?JULY_ADJ[c.reg]:null)||((MONTH_ADJ[month]||{})[c.reg]||null);
@@ -556,7 +621,8 @@ async function load(month){
       return o;
     });
     const cmap={};state.cars.forEach(c=>{cmap[c.cid]=c.company||String(c.cid);});
-    state.drivers=drv.map(d=>({id:d.driver_id,name:d.name||('Driver '+d.driver_id),cid:d.cid,flota:cmap[d.cid]||String(d.cid),oh:N(d.oh),poh:N(d.poh),ppeak:N(d.ppeak),util:N(d.util),pm30:N(d.pm30),pair:N(d.pair),eph:N(d.eph),earn:N(d.earn),fin:rr(useCon?N(d.fin_con):N(d.fin_leg)),acc:rr(N(d.acc)),nAcc:N(d.n_acc)||0,nNr:N(d.n_nr)||0,nRj:N(d.n_rj)||0,nCa:N(d.n_ca)||0,nFin:N(d.n_fin)||0,ofr:(N(d.n_acc)||0)+(N(d.n_nr)||0)+(N(d.n_rj)||0),perdidos:(N(d.n_nr)||0)+(N(d.n_rj)||0)+(N(d.n_ca)||0)}));
+    state.drivers=drv.map(d=>({id:d.driver_id,name:d.name||('Driver '+d.driver_id),cid:d.cid,flota:cmap[d.cid]||String(d.cid),oh:N(d.oh),poh:N(d.poh),ppeak:N(d.ppeak),util:N(d.util),pm30:N(d.pm30),pair:N(d.pair),earn:(state.portal&&ledDrv[String(d.driver_id)]!=null?ledDrv[String(d.driver_id)]:N(d.earn)),eph:null,fin:rr(useCon?N(d.fin_con):N(d.fin_leg)),acc:rr(N(d.acc)),nAcc:N(d.n_acc)||0,nNr:N(d.n_nr)||0,nRj:N(d.n_rj)||0,nCa:N(d.n_ca)||0,nFin:N(d.n_fin)||0,ofr:(N(d.n_acc)||0)+(N(d.n_nr)||0)+(N(d.n_rj)||0),perdidos:(N(d.n_nr)||0)+(N(d.n_rj)||0)+(N(d.n_ca)||0)}));
+    state.drivers.forEach(d=>{d.eph=d.oh>0&&d.earn!=null?d.earn/d.oh:null;});
     state.ohTot=state.daily.reduce((s,r)=>s+(r.oh||0),0);
     state.pohTot=state.daily.reduce((s,r)=>s+(r.poh||0),0);
     state.busyTot=state.daily.reduce((s,r)=>s+(r.busy||0),0);
@@ -564,6 +630,8 @@ async function load(month){
     state.airTot=state.daily.reduce((s,r)=>s+(r.air||0),0);
     render();
     $('status').textContent=window.BAKED?('Datos a día vencido · hasta '+(window.BAKED_DATE||'')):('Actualizado '+new Date().toLocaleString('es-ES',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}));
+    // El libro de saldos (logica del portal) es lento: se pide aparte para no retrasar la carga.
+    if(usaPortal&&!horneado)cargarPortal(month,start,end,fetchStart,fetchEnd,pr);
   }catch(err){
     console.error(err);
     $('errBox').textContent='Error al consultar Databricks: '+err.message;
@@ -571,6 +639,51 @@ async function load(month){
     $('status').textContent='Error';
   }
 }
+// Facturacion con la logica del portal de flotas. Se ejecuta despues del primer pintado y
+// de forma secuencial, para no saturar el conector ni retrasar la carga del dashboard.
+async function cargarPortal(month,start,end,fetchStart,fetchEnd,pr){
+  const st=$('status'),prev=st.textContent;
+  try{
+    st.textContent='Actualizando facturación con la lógica del portal…';
+    const ledTot=await runSQL(qLedTot(start,end));
+    const led=await runSQL(qLed(start,end));
+    const ledDay=await runSQL(qLedDay(fetchStart,fetchEnd));
+    const pLedTot=pr.start>=PORTAL_FROM+'-01'?await runSQL(qLedTot(pr.start,pr.end)):[];
+    if(state.month!==month)return;            // el usuario ha cambiado de mes mientras tanto
+    if(!ledTot||!ledTot.length||!led||!led.length){st.textContent=prev;return;}
+    aplicarPortal(ledTot,ledDay,led,pLedTot);
+    if(state.rawByMonth&&state.rawByMonth[month]){const a=state.rawByMonth[month];a[7]=ledTot;a[8]=ledDay||[];a[9]=led;a[10]=pLedTot||[];}
+    render();
+    st.textContent=prev+' · facturación del portal';
+  }catch(e){
+    console.error(e);
+    st.textContent=prev+' · facturación aproximada (GMV × 0,75)';
+  }
+}
+function aplicarPortal(ledTot,ledDay,led,pLedTot){
+  const ledCar={},ledDrv={};
+  (led||[]).forEach(r=>{(r.k==='c'?ledCar:ledDrv)[String(r.id)]=N(r.neto)||0;});
+  state.ledTot=(ledTot&&ledTot[0])||null;
+  if(!state.ledTot)return;
+  state.portal=true;
+  state.kpi.gmv_neto=N(state.ledTot.neto);state.kpi.gmv_bruto=N(state.ledTot.bruto);
+  if(pLedTot&&pLedTot[0])state.prev.gmv_neto=N(pLedTot[0].neto);
+  if(ledDay&&ledDay.length){const lm={};ledDay.forEach(r=>lm[r.d]=N(r.neto));
+    state.dailyAll.forEach(r=>{if(lm[r.d]!=null)r.gmv=lm[r.d];});
+    state.daily=state.dailyAll.filter(r=>r.d>=state.month+'-01'&&r.d<=yesterdayISO());}
+  const RANKS={'2.5':5,'2':4,'1.5':3,'1':2,'branding':1,'none':0};
+  state.cars.forEach(o=>{
+    const v=ledCar[String(o.car_id)];
+    if(v==null)return;
+    o.earn=v;o.eph=o.oh>0?v/o.oh:null;
+    const L=carLevel(o);
+    const j=(state.month==='2026-07'?JULY_ADJ[o.reg]:null)||((MONTH_ADJ[state.month]||{})[o.reg]||null);
+    if(j){o.lvl=j.lvl;o.gar=j.gar;o.comp=j.comp;o.adj=true;o.lvlRank=RANKS[j.lvl];}
+    else{o.lvl=L.lvl;o.gar=L.gar;o.comp=Math.max(0,L.gar-o.earn);o.lvlRank=RANKS[o.lvl];}
+  });
+  state.drivers.forEach(d=>{const v=ledDrv[String(d.id)];if(v==null)return;d.earn=v;d.eph=d.oh>0?v/d.oh:null;});
+}
+
 function mergeDaily(dg,doh){
   const m={};
   dg.forEach(r=>{m[r.d]=m[r.d]||{d:r.d};m[r.d].gmv=N(r.gmv);m[r.d].rides=N(r.rides);m[r.d].finLeg=N(r.fin_leg);m[r.d].finCon=N(r.fin_con);});

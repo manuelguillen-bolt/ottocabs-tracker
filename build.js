@@ -22,12 +22,12 @@ const tpl=fs.readFileSync('fleet-template.html','utf8');
 function seg(re,name){const m=tpl.match(re);if(!m){console.error('No se pudo extraer '+name);process.exit(1);}return m[0];}
 const peak=seg(/const PEAK_CASE=`[^`]+`;/,'PEAK_CASE');
 const regions=seg(/const REGION_M30=\d+, REGION_AIR=\d+;/,'REGIONES');
-const qStart=tpl.indexOf('function qKpi(');
+const qStart=tpl.indexOf('const LED_INC=');  // incluye las queries del libro de saldos y las de siempre
 const qEndAnchor='ORDER BY a.oh DESC LIMIT 400`;}';
 const qEnd=tpl.indexOf(qEndAnchor)+qEndAnchor.length;
 if(qStart<0||qEnd<qStart){console.error('No se pudieron extraer las queries');process.exit(1);}
 const fns=tpl.slice(qStart,qEnd);
-const makeQueries=OTTO=>new Function('OTTO',peak+fns+';return {qKpi,qDailyGmv,qDailyOh,qCars,qDrv};')(OTTO);
+const makeQueries=OTTO=>new Function('OTTO',peak+fns+';return {qKpi,qDailyGmv,qDailyOh,qCars,qDrv,qLedTot,qLedDay,qLed};')(OTTO);
 
 // ---------- 2. Fechas (Europe/Madrid, a día vencido) ----------
 const todayMadrid=new Date().toLocaleDateString('en-CA',{timeZone:'Europe/Madrid'});
@@ -93,12 +93,18 @@ async function sql(q){
   for(const m of months){
     const{start,end,fetchStart,fetchEnd}=monthRange(m);
     console.log('Mes',m,start,'→',end);
-    const [kpi,dg,doh,cars,drv]=await Promise.all([
+    const usaPortal=m>='2026-10';  // desde octubre 2026 la facturacion sale del libro de saldos
+    const [kpi,dg,doh,cars,drv,ledTot,ledDay,led]=await Promise.all([
       sql(Q.qKpi(start,end)),sql(Q.qDailyGmv(fetchStart,fetchEnd)),sql(Q.qDailyOh(fetchStart,fetchEnd)),
-      sql(Q.qCars(start,end)),sql(Q.qDrv(start,end))
+      sql(Q.qCars(start,end)),sql(Q.qDrv(start,end)),
+      usaPortal?sql(Q.qLedTot(start,end)):Promise.resolve([]),
+      usaPortal?sql(Q.qLedDay(fetchStart,fetchEnd)):Promise.resolve([]),
+      usaPortal?sql(Q.qLed(start,end)):Promise.resolve([])
     ]);
-    BAKED[m]=[kpi,dg,doh,cars,drv,[],[]];
+    if(usaPortal&&(!ledTot.length||!led.length)){console.error(`El libro de saldos no ha devuelto datos para ${m}. No se publica.`);process.exit(78);}
+    BAKED[m]=[kpi,dg,doh,cars,drv,[],[],ledTot,ledDay,led,[]];
     console.log(`  kpi=${kpi.length} daily=${dg.length}/${doh.length} coches=${cars.length} conductores=${drv.length}`);
+    if(usaPortal)console.log(`  libro de saldos: bruto=${ledTot[0]&&ledTot[0].bruto} neto=${ledTot[0]&&ledTot[0].neto} · ${led.length} filas coche/conductor`);
     // Guardia de frescura: el ultimo mes debe traer el dia de ayer ya consolidado.
     // Si el ETL de Databricks aun no ha cargado ayer, abortamos SIN publicar para que el
     // siguiente intento programado lo recoja (evita publicar un dia a medias).
